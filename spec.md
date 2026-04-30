@@ -119,8 +119,8 @@ Validation:
     }
   ],
   "stats": {
-    "items_total": 22,
-    "items_extracted": 17,
+    "items_total": 23,
+    "items_extracted": 18,
     "items_incorporated_by_reference": 4,
     "items_not_applicable": 0,
     "items_reserved": 1,
@@ -258,7 +258,7 @@ Pass bar (the harness exits non-zero below these):
 ## 6. Acceptance criteria
 
 - [ ] Pipeline stages each have a unit test with ≥ 1 fixture.
-- [ ] `/extract` end-to-end against AAPL most recent 10-K returns the canonical 22-item set with `items_missing == 0` (allowing 1B/4 to be `not_applicable`).
+- [ ] `/extract` end-to-end against AAPL most recent 10-K returns the canonical 23-item set with `items_missing == 0` (allowing 1B/4 to be `not_applicable`).
 - [ ] `/extract` against a filing with extensive Part III incorporation correctly emits `incorporated_by_reference` for Items 10–14.
 - [ ] `/extract` against a 1990s plain-text filing returns ≥ 80% items_recall.
 - [ ] `eval/run_eval.py` runs to completion against the live URL; report exists with all sections populated.

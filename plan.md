@@ -55,7 +55,7 @@
 
 ### 2.1 `extractor/canonical_items.py`
 
-Single source of truth for the 22-item catalog (§4.1 of spec). Provides:
+Single source of truth for the 23-item catalog (§4.1 of spec). Provides:
 
 - `CANONICAL_ITEMS: list[CanonicalItem]` — `(part, item_number, title, aliases, valid_from, valid_to)`.
 - `sort_key(item_number) → tuple` — stable ordering across `1, 1A, 1B, 1C, 2`.
@@ -217,7 +217,7 @@ Pure stdlib + `httpx`. Reads `eval/fixtures/filings.jsonl`, posts each to `/extr
 
 ## 5. Sequence
 
-1. **Skeleton + AAPL end-to-end (rules only).** Fetcher, resolver (Submissions API), normalizer, TOC-anchor locator, status detector, basic API. Goal: AAPL FY24 returns 22 items, statuses correct on the easy cases.
+1. **Skeleton + AAPL end-to-end (rules only).** Fetcher, resolver (Submissions API), normalizer, TOC-anchor locator, status detector, basic API. Goal: AAPL FY24 returns 23 items, statuses correct on the easy cases.
 2. **Heading-regex locator + plain-text path.** Add the second strategy, branch in normalizer for `.txt` filings, add fixture for one pre-2002 filing.
 3. **Validator + warnings.** Item monotonicity, char-range continuity, canonical title fuzzy-match, XBRL Company Facts cross-check.
 4. **LLM fallback locator.** Sonnet, fenced, capped, cost-tracked.

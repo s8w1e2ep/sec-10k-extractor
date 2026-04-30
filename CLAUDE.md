@@ -8,7 +8,7 @@ A submission for **Task 3** of an AI Coding Test: a pipeline that takes a 10-K f
 
 **Key framing — do not lose this:**
 
-- 10-Ks have a fixed item catalog (22 items post-2023) but enormously varied rendering: modern inline-XBRL HTML, legacy HTML, pre-2002 plain text, 10-K/A amendments. The system is designed around handling the **long tail honestly**, not just the head.
+- 10-Ks have a fixed item catalog (23 items post-2023) but enormously varied rendering: modern inline-XBRL HTML, legacy HTML, pre-2002 plain text, 10-K/A amendments. The system is designed around handling the **long tail honestly**, not just the head.
 - `status` is a **textual property** the filer chose to write inside an otherwise-present item, not a structural one. Status detection runs **after** locating, on the located content. An incorporated-by-reference Item 10 is still a *located* Item 10.
 - `char_range` is offsets into our **normalized plain text**, NOT raw HTML. The normalizer is the single source of truth for offsets; any change to it invalidates char-range golden tests on purpose.
 - This is a **cost-disciplined system**. Rules first. The LLM exists for the long tail, capped at 1 call per request. A clean modern filing should cost $0 in LLM.
@@ -19,7 +19,7 @@ A submission for **Task 3** of an AI Coding Test: a pipeline that takes a 10-K f
 ```
 sec-10k-extractor/
 ├── extractor/                # core pipeline (no FastAPI imports here)
-│   ├── canonical_items.py    # 22-item catalog + sort/match helpers
+│   ├── canonical_items.py    # 23-item catalog + sort/match helpers
 │   ├── fetcher.py            # SEC HTTP client (UA, rate limit, cache, allowlist)
 │   ├── resolver.py           # (cik, accession) → primary doc URL
 │   ├── format_detect.py      # html_modern | html_legacy | plain_text
@@ -87,6 +87,6 @@ Note the two `prompts/` directories are different on purpose:
 - Submissions API shape: `https://data.sec.gov/submissions/CIK{0:010d}.json`
 - Company Facts API: `https://data.sec.gov/api/xbrl/companyfacts/CIK{0:010d}.json`
 - Full-text search (optional convenience): `https://efts.sec.gov/LATEST/search-index?q={q}&forms=10-K`
-- Item catalog (22 items as of FY 2023+; 1C added 2023, 9C added 2021): `extractor/canonical_items.py`
+- Item catalog (23 items as of FY 2023+; 1C added 2023, 9C added 2021): `extractor/canonical_items.py`
 - Filing format era timeline (for picking eval fixtures): `eval/fixtures/format_eras.md`
 - 10-K item structure background: SEC Form 10-K General Instructions

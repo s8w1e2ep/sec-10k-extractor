@@ -33,7 +33,7 @@ Response shape: see [`spec.md` §4.3](./spec.md).
 
 ## What this is
 
-10-K filings have a fixed item catalog (22 items across Parts I–IV, post-2023) but their rendering varies enormously: modern inline-XBRL HTML, legacy HTML, pre-2002 plain-text filings, 10-K/A amendments that re-state only some items. The grader calls `/extract` with their own selected filings; we return structured JSON they can verify.
+10-K filings have a fixed item catalog (23 items across Parts I–IV, post-2023) but their rendering varies enormously: modern inline-XBRL HTML, legacy HTML, pre-2002 plain-text filings, 10-K/A amendments that re-state only some items. The grader calls `/extract` with their own selected filings; we return structured JSON they can verify.
 
 **Per-item record**: `part`, `item_number`, `item_title`, `content_text`, `char_range`, `status`, `resolved_by`.
 
