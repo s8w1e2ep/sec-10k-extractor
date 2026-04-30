@@ -89,4 +89,5 @@ Note the two `prompts/` directories are different on purpose:
 - Full-text search (optional convenience): `https://efts.sec.gov/LATEST/search-index?q={q}&forms=10-K`
 - Item catalog (23 items as of FY 2023+; 1C added 2023, 9C added 2021): `extractor/canonical_items.py`
 - Filing format era timeline (for picking eval fixtures): `eval/fixtures/format_eras.md`
+- Implementation journal — issues that surfaced during build, decisions made, deferred limitations: `decisions.md`
 - 10-K item structure background: SEC Form 10-K General Instructions
