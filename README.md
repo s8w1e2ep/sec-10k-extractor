@@ -32,6 +32,12 @@ curl -X POST http://localhost:8000/extract \
 
 Response shape and full I/O contract: [`spec.md` §4.3](./spec.md).
 
+**Form gating**: this service handles 10-K only. The 10-K family (`10-KSB`, `10-K405`, `10-KT` — historical small-business and transition-period variants) is accepted because they share the same item catalog. Amendments (`10-K/A`, `10-KSB/A`, etc.) and other form types (`10-Q`, `8-K`, `20-F`, `40-F`, …) return HTTP 400:
+
+```json
+{"error": "Unsupported form: 10-K/A. This service supports 10-K only.", "form": "10-K/A", "supported_forms": "..."}
+```
+
 ```bash
 # Run the eval against a running server
 .venv/bin/python eval/run_eval.py http://localhost:8000

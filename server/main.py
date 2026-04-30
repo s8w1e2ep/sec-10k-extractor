@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, model_validator
 
-from extractor.pipeline import extract_filing
+from extractor.pipeline import UnsupportedFormError, extract_filing
 
 
 app = FastAPI(title="SEC 10-K Extractor", version="0.1.0")
@@ -33,6 +33,17 @@ class ExtractRequest(BaseModel):
         return self
 
 
+def _unsupported_form_response(e: UnsupportedFormError) -> JSONResponse:
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": str(e),
+            "form": e.form,
+            "supported_forms": "10-K (and historical 10-K family: 10-KSB, 10-K405, 10-KT). Amendments (/A suffix) are not supported.",
+        },
+    )
+
+
 @app.post("/extract")
 async def extract(req: ExtractRequest):
     try:
@@ -47,6 +58,8 @@ async def extract(req: ExtractRequest):
         return JSONResponse(result)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Extraction exceeded 90s timeout")
+    except UnsupportedFormError as e:
+        return _unsupported_form_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -61,6 +74,8 @@ async def extract_get(cik: str, accession: str):
         return JSONResponse(result)
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Extraction exceeded 90s timeout")
+    except UnsupportedFormError as e:
+        return _unsupported_form_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

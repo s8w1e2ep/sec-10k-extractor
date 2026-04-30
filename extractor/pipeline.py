@@ -30,6 +30,33 @@ from .types import ExtractedItem, FilingMetadata, ItemSpan, NormalizedDoc
 from .validator import validate
 
 
+class UnsupportedFormError(Exception):
+    """Raised when a non-10-K filing (e.g. 10-K/A, 10-Q, 8-K) is submitted.
+
+    The service contract is "10-K only". 10-K family variants such as
+    10-KSB / 10-K405 / 10-KT (legacy small-business and transition-period
+    forms) are accepted because they share the same item catalog. Any
+    amendment form (`/A` suffix) is explicitly rejected — amendments
+    have a different item structure (often partial) that this pipeline
+    is not built to handle.
+    """
+
+    def __init__(self, form: str):
+        self.form = form
+        super().__init__(
+            f"Unsupported form: {form}. This service supports 10-K only."
+        )
+
+
+def _is_supported_form(form: str) -> bool:
+    f = (form or "").strip().upper()
+    if not f.startswith("10-K"):
+        return False
+    if "/A" in f:  # amendments: 10-K/A, 10-KSB/A, 10-KT/A, etc.
+        return False
+    return True
+
+
 async def extract_filing(
     *,
     cik: str | None = None,
@@ -44,6 +71,9 @@ async def extract_filing(
         meta = await resolve_by_cik_accession(cik, accession_number)
     else:
         raise ValueError("Provide (cik, accession_number) or file_url")
+
+    if meta.form and meta.form != "UNKNOWN" and not _is_supported_form(meta.form):
+        raise UnsupportedFormError(meta.form)
 
     t_fetch = time.monotonic()
     raw = await fetch(meta.primary_document_url)
