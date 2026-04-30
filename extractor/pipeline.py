@@ -17,7 +17,11 @@ from .locator import (
     locate_by_heading_regex,
     locate_by_toc_anchor,
 )
-from .normalizer import normalize_html, normalize_plain_text
+from .normalizer import (
+    normalize_html,
+    normalize_plain_text,
+    trim_leading_boilerplate,
+)
 from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
 from .types import ExtractedItem, FilingMetadata, NormalizedDoc
@@ -66,7 +70,14 @@ async def extract_filing(
     warnings.extend(locator_warnings)
 
     for span in spans:
-        content = doc.text[span.start:span.end].strip()
+        raw_content = doc.text[span.start:span.end]
+        # Trim leading repeating-page-header artefacts ("Table of Contents",
+        # "Parts II and III", page numbers) so content_text is the real section
+        # body and char_range.start lines up with it. Coverage may drop slightly
+        # because the trimmed boilerplate belongs to no item — that's accurate.
+        skip = trim_leading_boilerplate(raw_content)
+        new_start = span.start + skip
+        content = doc.text[new_start:span.end].strip()
         status = detect_status(span.item_number, content)
         items.append(
             ExtractedItem(
@@ -74,7 +85,7 @@ async def extract_filing(
                 item_number=span.item_number,
                 item_title=span.item_title,
                 content_text=content,
-                char_range_start=span.start,
+                char_range_start=new_start,
                 char_range_end=span.end,
                 status=status,
                 resolved_by=span.resolved_by,

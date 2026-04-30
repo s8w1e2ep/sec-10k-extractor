@@ -129,6 +129,48 @@ _HEADING_LINE_RE = re.compile(
 _PART_LINE_RE = re.compile(r"^\s*PART\s+(?:I|II|III|IV)\b\.?\s*$", re.IGNORECASE)
 
 
+# Repeating page-header artefacts that some HTML 10-K templates inject at the
+# top of every page. When a section anchor lands on such a page, the section's
+# content_text starts with these lines instead of the real "Item N." heading.
+# Patterns are intentionally narrow to avoid over-trimming real content.
+_BOILERPLATE_PATTERNS = [
+    re.compile(r"\A\s*Table\s+of\s+Contents\s*\Z", re.IGNORECASE),
+    # "Part I", "Part II", etc., or shared "Parts II and III" headers
+    re.compile(
+        r"\A\s*Parts?\s+(?:I|II|III|IV)"
+        r"(?:\s+(?:and|&)\s+(?:I|II|III|IV))?\s*\.?\s*\Z",
+        re.IGNORECASE,
+    ),
+    # bare or dashed page numbers: "12", "- 12 -"
+    re.compile(r"\A\s*-?\s*\d{1,4}\s*-?\s*\Z"),
+]
+
+
+def is_boilerplate_line(stripped: str) -> bool:
+    """True if `stripped` matches a known repeating-page-header pattern."""
+    return any(p.match(stripped) for p in _BOILERPLATE_PATTERNS)
+
+
+def trim_leading_boilerplate(content: str) -> int:
+    """Return number of chars to skip from the start of `content` to reach
+    the first line that is neither blank nor a known page-header artefact.
+
+    Defensive: returns 0 if every line is blank/boilerplate, so we never
+    collapse a section into empty content.
+    """
+    pos = 0
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            pos += len(line) + 1
+            continue
+        if is_boilerplate_line(stripped):
+            pos += len(line) + 1
+            continue
+        return pos
+    return 0
+
+
 def normalize_plain_text(raw: bytes) -> NormalizedDoc:
     """Normalize a pre-2002 plain-text EDGAR filing.
 

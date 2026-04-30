@@ -105,6 +105,38 @@ def test_title_match_canonical():
     assert _check_title_match([item]) == []
 
 
+def test_title_match_skips_leading_table_of_contents():
+    """NVDA / Newmont: section starts with 'Table of Contents' page header.
+
+    Validator should skip past it and read the next line for the heading.
+    """
+    item = _item(
+        "2", 0, 5000,
+        text="Table of Contents\nItem 2. Properties\n" + "x" * 4000,
+    )
+    assert _check_title_match([item]) == []
+
+
+def test_title_match_handles_multi_line_walmart_pattern():
+    """WMT splits 'ITEM 1C.' (number) and 'CYBERSECURITY' (title) across two
+    lines. Validator should read the title from line 2."""
+    item = _item(
+        "1C", 0, 5000,
+        text="ITEM 1C.\nCYBERSECURITY\n" + "x" * 4000,
+    )
+    assert _check_title_match([item]) == []
+
+
+def test_title_match_handles_jpm_parts_divider():
+    """JPM Item 8 starts with 'Parts II and III' — a Parts divider header."""
+    item = _item(
+        "8", 0, 5000,
+        text="Parts II and III\nItem 8. Financial Statements and Supplementary Data.\n"
+             + "x" * 4000,
+    )
+    assert _check_title_match([item]) == []
+
+
 def test_title_match_via_alias():
     """AAPL FY1996 Item 4 says 'Submission of Matters to a Vote of Security
     Holders' — that's a known alias of post-2011 'Mine Safety Disclosures'.

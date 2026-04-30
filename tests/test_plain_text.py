@@ -1,4 +1,8 @@
-from extractor.normalizer import normalize_plain_text
+from extractor.normalizer import (
+    is_boilerplate_line,
+    normalize_plain_text,
+    trim_leading_boilerplate,
+)
 
 
 def test_basic_passthrough():
@@ -78,6 +82,65 @@ Apple Computer designs personal computers.
     assert "<TEXT>" not in doc.text
     heading_texts = [h.text for h in doc.headings]
     assert any("ITEM 1" in t for t in heading_texts)
+
+
+def test_boilerplate_line_table_of_contents():
+    assert is_boilerplate_line("Table of Contents")
+    assert is_boilerplate_line("TABLE OF CONTENTS")
+    assert is_boilerplate_line("table of contents")
+
+
+def test_boilerplate_line_part_dividers():
+    assert is_boilerplate_line("Part I")
+    assert is_boilerplate_line("PART II")
+    assert is_boilerplate_line("Parts II and III")
+    assert is_boilerplate_line("Parts III and IV")
+    assert is_boilerplate_line("Part IV.")
+
+
+def test_boilerplate_line_page_numbers():
+    assert is_boilerplate_line("12")
+    assert is_boilerplate_line("- 12 -")
+    assert is_boilerplate_line("123")
+
+
+def test_boilerplate_line_rejects_real_content():
+    assert not is_boilerplate_line("Item 1. Business")
+    assert not is_boilerplate_line("ITEM 1C. CYBERSECURITY")
+    assert not is_boilerplate_line("The information required by this Item")
+    assert not is_boilerplate_line("Apple Inc.")  # company name without "and"
+    assert not is_boilerplate_line("Part of our strategy is")  # "Part" but not divider
+
+
+def test_trim_skips_table_of_contents():
+    """NVDA / Newmont pattern."""
+    content = "Table of Contents\nItem 2. Properties\nOur HQ is in Santa Clara."
+    skip = trim_leading_boilerplate(content)
+    assert content[skip:].startswith("Item 2. Properties")
+
+
+def test_trim_skips_parts_divider():
+    """JPM pattern: 'Parts II and III' header before Item 8."""
+    content = "Parts II and III\nItem 8. Financial Statements...\nDetails follow."
+    skip = trim_leading_boilerplate(content)
+    assert content[skip:].startswith("Item 8.")
+
+
+def test_trim_skips_blanks_and_boilerplate_combined():
+    content = "\nTable of Contents\n\nPart I\n\nItem 1. Business\n..."
+    skip = trim_leading_boilerplate(content)
+    assert content[skip:].startswith("Item 1. Business")
+
+
+def test_trim_returns_zero_when_no_leading_boilerplate():
+    content = "Item 1. Business\nApple Inc. designs..."
+    assert trim_leading_boilerplate(content) == 0
+
+
+def test_trim_returns_zero_when_all_boilerplate():
+    """Defensive: never collapse a section into empty content."""
+    content = "Table of Contents\n\nPart I\n12\n"
+    assert trim_leading_boilerplate(content) == 0
 
 
 def test_heading_offset_points_into_text():

@@ -302,4 +302,80 @@ template trip the validator. Fix would be to skip "Table of Contents" /
 
 ---
 
+## 2026-04-30 — Phase 8 follow-up: trim repeating-page-header artefacts
+
+Promoted from Phase 8 backlog after the user pushed back on the
+title_mismatch warnings: "解析財報時不會出錯嗎?" — does the leading
+"Table of Contents" noise actually corrupt content_text?
+
+Short answer was yes-ish: the items were located correctly but
+content_text included page-header noise, which would (a) muddy what the
+grader reads, (b) in rare edge cases push short reserved/N/A items above
+the length threshold and miscategorize their status. So the fix wasn't
+purely cosmetic.
+
+### Three patterns to handle, found by probing actual fixtures
+
+1. **NVDA / Newmont** — leading `Table of Contents` line on every section
+   (HTML template's repeating page header)
+2. **JPM** — leading `Parts II and III` / `Parts III and IV` on Items
+   that span multiple Parts (e.g. Item 8's section is shared)
+3. **Walmart** — `ITEM N.\nTITLE` multi-line heading; the title isn't on
+   the same line as the item number
+
+### Two-layer fix
+
+- **Pipeline trim (`extractor/normalizer.py:trim_leading_boilerplate`):**
+  before assembling content_text, advance `char_range.start` past lines
+  that match conservative boilerplate patterns (Table of Contents, Parts
+  X(/Y), bare/dashed page numbers). All-caps company-name patterns
+  considered but rejected as too risky for false positives. Defensive
+  fallback: never collapse a section into empty content (returns 0 trim
+  if all lines are boilerplate).
+
+- **Validator fix (`_extract_section_heading`):**
+  skip leading boilerplate (defensive — pipeline already trims), and
+  handle multi-line "ITEM N." + "TITLE" patterns by reading the title
+  from line 2 when line 1 is just the item number.
+
+### A regex backtracking surprise during the validator fix
+
+`_SECTION_HEADING_RE` against "ITEM 1C." returned `group(1) = "."` via
+backtracking — `(.+?)` non-greedy matched the trailing period after the
+optional `[—–:.\-]?` class declined to consume it. Symptom: the validator
+reported `detected '.'`, fuzzy-matched against "Cybersecurity", scored 0.
+Fix: reject candidate matches whose group(1) contains no alphanumerics —
+those are degenerate punctuation-only matches, not real titles.
+
+### Eval impact
+
+Local re-run after the fix:
+
+| Filing | Before | After |
+|---|---|---|
+| NVDA | 2 warn | **0** |
+| Newmont | 5 warn | **0** |
+| Walmart | 2 warn | **0** |
+| JPMorgan | 3 warn | **0** |
+| Tesla | 2 warn | **0** |
+| Berkshire | 2 warn | 1 (genuine: Item 14 has unusual IBR-like opener that confuses the title check; left for grader to inspect) |
+| AAPL FY2025 / FY1996 | 0 / 1 | 0 / 1 (unchanged; FY1996 Item 14 is the SOX rename — still in Phase 8 backlog as the right deferral) |
+
+Total warnings fell from ~17 to 2. agg_recall stays at 1.000;
+status_correctness stays at 1.000; p95 modern_clean improves slightly
+(less content_text to extract).
+
+### What NOT to do
+
+- Don't extend the boilerplate patterns to all-caps short lines without
+  evidence. The template-aware patterns above are deliberately narrow.
+  All-caps company-name lines are common in PDFs but I haven't seen them
+  cause issues in the HTML-rendered filings the grader will use.
+- Don't push char_range.start adjustment into the locator — keep
+  locator's job as "where does the section anchor live", and let the
+  pipeline make the cosmetic trim. The locator should remain testable
+  with synthetic HTML that has no page headers.
+
+---
+
 _Phase 6 onward will append entries here as issues surface._

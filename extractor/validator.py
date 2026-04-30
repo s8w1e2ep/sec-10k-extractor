@@ -14,11 +14,18 @@ from rapidfuzz import fuzz
 
 from .canonical_items import canonical_index, get_canonical_item
 from .fetcher import fetch
+from .normalizer import is_boilerplate_line
 from .types import ExtractedItem, FilingMetadata
 
 
 _SECTION_HEADING_RE = re.compile(
     r"^\s*(?:Item|ITEM)\s+\d{1,2}[A-Z]?\s*\.?\s*[—–:.\-]?\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+# "ITEM 1C." with no title on the same line — Walmart pattern where the title
+# wraps onto the next line.
+_ITEM_NUMBER_ONLY_RE = re.compile(
+    r"^\s*(?:Item|ITEM)\s+\d{1,2}[A-Z]?\s*\.?\s*$",
     re.IGNORECASE,
 )
 
@@ -128,14 +135,44 @@ def _check_brevity_sanity(items: list[ExtractedItem]) -> list[dict]:
 
 
 def _extract_section_heading(content_text: str) -> str:
+    """Pull what the filer wrote as the section title from content_text.
+
+    Robust to:
+    - leading repeating-page-header artefacts (defensive — pipeline already
+      trims these, but we re-skip in case validator runs on data that didn't)
+    - multi-line headings where the item number is on one line and the title
+      on the next (Walmart-style "ITEM 1C.\\nCYBERSECURITY")
+    """
     text = content_text.strip()
     if not text:
         return ""
-    first_line = text.splitlines()[0]
-    m = _SECTION_HEADING_RE.match(first_line)
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        if not stripped or is_boilerplate_line(stripped):
+            i += 1
+            continue
+        break
+    if i >= len(lines):
+        return ""
+
+    first = lines[i].strip()
+    m = _SECTION_HEADING_RE.match(first)
     if m:
-        return m.group(1).strip()
-    return first_line.strip()
+        candidate = m.group(1).strip()
+        # The regex can backtrack into degenerate matches where (.+?) ends up
+        # consuming a stray punctuation char like '.' from "ITEM 1C." — reject
+        # those and fall through to the multi-line / fallback path.
+        if candidate and any(c.isalnum() for c in candidate):
+            return candidate
+
+    if _ITEM_NUMBER_ONLY_RE.match(first) and i + 1 < len(lines):
+        next_line = lines[i + 1].strip()
+        if next_line:
+            return next_line
+
+    return first
 
 
 def _check_title_match(
