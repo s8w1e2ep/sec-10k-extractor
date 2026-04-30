@@ -2,12 +2,17 @@
 
 import asyncio
 import hashlib
+import logging
 import os
 import time
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+
+from .logging_config import get_logger, log_event
+
+LOG = get_logger("extractor.fetcher")
 
 
 CACHE_DIR = Path(os.environ.get("CACHE_DIR", "cache"))
@@ -70,9 +75,18 @@ async def fetch(url: str, *, force: bool = False) -> bytes:
 
     cache = _cache_path(url)
     if not force and cache.exists():
-        return cache.read_bytes()
+        data = cache.read_bytes()
+        log_event(
+            LOG,
+            "fetcher.cache_hit",
+            level=logging.DEBUG,
+            url=url,
+            bytes=len(data),
+        )
+        return data
 
     await _bucket.acquire()
+    log_event(LOG, "fetcher.cache_miss", url=url)
 
     headers = {
         "User-Agent": _user_agent(),
@@ -80,6 +94,7 @@ async def fetch(url: str, *, force: bool = False) -> bytes:
         "Host": urlparse(url).hostname or "",
     }
     last_status = None
+    t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         for attempt in range(4):
             r = await client.get(url, headers=headers)
@@ -87,13 +102,39 @@ async def fetch(url: str, *, force: bool = False) -> bytes:
             if r.status_code == 200:
                 CACHE_DIR.mkdir(parents=True, exist_ok=True)
                 cache.write_bytes(r.content)
+                log_event(
+                    LOG,
+                    "fetcher.fetched",
+                    url=url,
+                    status=r.status_code,
+                    bytes=len(r.content),
+                    attempts=attempt + 1,
+                    duration_ms=int((time.monotonic() - t0) * 1000),
+                )
                 return r.content
             if r.status_code in (429, 500, 502, 503, 504):
                 wait = min(30.0, 2 ** attempt)
+                log_event(
+                    LOG,
+                    "fetcher.retry",
+                    level=logging.WARNING,
+                    url=url,
+                    status=r.status_code,
+                    attempt=attempt + 1,
+                    wait_s=wait,
+                )
                 await asyncio.sleep(wait)
                 await _bucket.acquire()
                 continue
             r.raise_for_status()
+    log_event(
+        LOG,
+        "fetcher.exhausted",
+        level=logging.ERROR,
+        url=url,
+        last_status=last_status,
+        attempts=4,
+    )
     raise RuntimeError(
         f"Failed to fetch {url} after 4 retries (last status={last_status})"
     )

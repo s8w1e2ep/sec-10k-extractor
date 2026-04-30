@@ -1,9 +1,9 @@
 """Tests for the LLM-backed resolvers (Layer 1 status, Layer 2 locator).
 
 We never call the real Anthropic API in tests — `extractor.llm_client.call_json`
-is monkeypatched to return canned dicts. The cap (1 call/request) is enforced
-by pipeline glue, not the resolvers themselves; here we verify each layer's
-contract in isolation.
+is monkeypatched to return canned dicts. The shared per-request budget
+(`MAX_LLM_CALLS_PER_REQUEST`) is enforced by pipeline glue, not the resolvers
+themselves; here we verify each layer's contract in isolation.
 """
 
 import pytest
@@ -207,6 +207,96 @@ async def test_fallback_locator_handles_no_api_key(monkeypatch):
     )
     assert spans == []
     assert any(w["code"] == "llm_skipped_no_api_key" for w in warns)
+
+
+# ---------------------------------------------------------------------------
+# Per-request budget integration (pipeline.py + MAX_LLM_CALLS_PER_REQUEST)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pipeline_allows_layer1_after_layer2_within_budget(monkeypatch, tmp_path):
+    """With MAX_LLM_CALLS_PER_REQUEST = 3, Layer 2 firing first does NOT
+    block Layer 1 anymore. A filing that both (a) misses a required item
+    *and* (b) has a title_mismatch on a different item must run both
+    layers and end up at usage.calls == 2."""
+    from extractor import fetcher, llm_resolver, pipeline, validator
+    from extractor.llm_client import MAX_LLM_CALLS_PER_REQUEST
+    from extractor.types import FilingMetadata
+
+    assert MAX_LLM_CALLS_PER_REQUEST >= 2, (
+        "test depends on the budget allowing both layers"
+    )
+
+    # Plain-text fixture — small, well-understood, exercises a real
+    # locator + status path. The 1996 Apple 10-K already passes
+    # rules-only, so we synthesise the two trigger conditions by
+    # monkeypatching the locator output and validator below.
+    fixture_path = tmp_path / "fake.txt"
+    fixture_path.write_bytes(
+        b"\f\nItem 1. Business\n\n"
+        + b"Apple Computer designs and manufactures personal computers. " * 50
+        + b"\n\nItem 14. Other matters\n\n"
+        + b"Information required by this Item is incorporated by reference. " * 20
+    )
+    raw = fixture_path.read_bytes()
+    url = "https://www.sec.gov/Archives/edgar/data/320193/fake.txt"
+
+    async def fake_resolve(cik, accession):
+        return FilingMetadata(
+            cik="0000320193", accession_number="0000320193-96-000023",
+            form="10-K", filing_date="1996-12-19", period_of_report="1996-09-27",
+            primary_document_url=url, company_name="Apple Computer Inc.",
+        )
+
+    async def fake_fetch(u, *, force=False):
+        return raw
+
+    monkeypatch.setattr(pipeline, "resolve_by_cik_accession", fake_resolve)
+    monkeypatch.setattr(pipeline, "fetch", fake_fetch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+
+    # Force a title_mismatch warning on Item 14 → triggers Layer 1.
+    real_validate = validator.validate
+
+    async def fake_validate(items, doc_len, meta):
+        warns = await real_validate(items, doc_len, meta)
+        if any(it.item_number == "14" for it in items):
+            warns.append({
+                "code": "title_mismatch",
+                "item": "14",
+                "message": "synthetic mismatch for budget test",
+            })
+        return warns
+
+    monkeypatch.setattr(pipeline, "validate", fake_validate)
+
+    # Stub LLM responses for both layers. fallback_locator gets a snippet
+    # that doesn't match the doc → returns no spans (we only care it ran).
+    layer_calls = {"layer2": 0, "layer1": 0}
+
+    async def fake_call(*, system, user, usage, **_):
+        # Bump the shared LLMUsage to mimic a real call.
+        usage.add(in_tok=100, out_tok=50)
+        if "locator" in system.lower() or "find" in system.lower() or "missing" in user.lower():
+            layer_calls["layer2"] += 1
+            return {"found_items": []}
+        layer_calls["layer1"] += 1
+        return {"decisions": [
+            {"item_number": "14", "status": "incorporated_by_reference",
+             "reason": "synthetic"},
+        ]}
+
+    monkeypatch.setattr(llm_resolver, "call_json", fake_call)
+
+    result = await pipeline.extract_filing(
+        cik="320193", accession_number="0000320193-96-000023"
+    )
+
+    # Both layers fired against the shared budget.
+    assert result["stats"]["llm_calls"] == 2
+    assert layer_calls["layer2"] == 1, "Layer 2 should fire (some required items missing)"
+    assert layer_calls["layer1"] == 1, "Layer 1 should fire after Layer 2 within budget"
 
 
 def test_llm_usage_cost_math():

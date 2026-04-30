@@ -1,6 +1,7 @@
 """LLM-backed resolvers — fenced last resort behind rules-based extraction.
 
-Two layers, sharing the per-request 1-call cap:
+Two layers, sharing a per-request budget of
+``MAX_LLM_CALLS_PER_REQUEST`` calls (see ``llm_client.py``):
 
 - **Layer 1 (status_resolver)**: when `validator` flags `title_mismatch` on
   one or more `extracted` items, ask the LLM to confirm/correct status.
@@ -11,8 +12,9 @@ Two layers, sharing the per-request 1-call cap:
   every required item for the filing's period, ask the LLM to find them
   in the first 50KB of the normalized document.
 
-When both layers want to fire, Layer 2 wins (missing items > wrong status).
-This keeps total LLM cost at ≤ 1 call per request.
+The pipeline runs Layer 2 first and Layer 1 afterwards; both gates check
+``usage.calls < MAX_LLM_CALLS_PER_REQUEST`` against the same ``LLMUsage``
+counter, so the budget is shared across the request.
 """
 
 import json

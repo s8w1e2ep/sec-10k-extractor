@@ -22,13 +22,19 @@ MAX_RAW_HTML_BYTES = 30 * 1024 * 1024
 from .canonical_items import expected_items_for_period, part_sort_key
 from .fetcher import fetch
 from .format_detect import detect_format
-from .llm_client import LLMUsage, is_configured
+from .llm_client import (
+    MAX_LLM_CALLS_PER_REQUEST,
+    LLMUsage,
+    daily_budget_remaining,
+    is_configured,
+)
 from .llm_resolver import fallback_locator, resolve_statuses
 from .locator import (
     combine_strategies,
     locate_by_heading_regex,
     locate_by_toc_anchor,
 )
+from .logging_config import get_logger, log_event
 from .normalizer import (
     normalize_html,
     normalize_plain_text,
@@ -38,6 +44,8 @@ from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
 from .types import ExtractedItem, FilingMetadata, ItemSpan, NormalizedDoc
 from .validator import validate
+
+LOG = get_logger("extractor.pipeline")
 
 
 class FilingNotFoundError(Exception):
@@ -123,6 +131,14 @@ async def extract_filing(
     file_url: str | None = None,
 ) -> dict[str, Any]:
     t0 = time.monotonic()
+    log_event(
+        LOG,
+        "pipeline.start",
+        input_kind="file_url" if file_url else "cik_accession",
+        cik=cik,
+        accession_number=accession_number,
+        file_url=file_url,
+    )
 
     if file_url:
         meta = await resolve_by_file_url(file_url)
@@ -177,21 +193,35 @@ async def extract_filing(
     expected_required = {c.item_number for c in required}
 
     # Layer 2 — locator fallback. Fires when required items are missing AND
-    # an API key is configured. Reuses the per-request 1-call cap; if it
-    # fires, Layer 1 will be skipped.
+    # an API key is configured AND the per-request LLM budget is not yet
+    # exhausted. Layer 1 may still fire afterwards in the same request.
     located_now = {s.item_number for s in spans}
     missing_now = sorted(
         expected_required - located_now,
         key=lambda n: part_sort_key("I", n),
     )
-    if missing_now and is_configured():
-        located_items_so_far = _spans_to_items_lite(spans, doc)
-        new_spans, l2_warnings = await fallback_locator(
-            doc, located_items_so_far, missing_now, usage=usage
-        )
-        warnings_out.extend(l2_warnings)
-        if new_spans:
-            spans = _merge_and_recompute(spans + new_spans, len(doc.text))
+    if (
+        missing_now
+        and is_configured()
+        and usage.calls < MAX_LLM_CALLS_PER_REQUEST
+    ):
+        if daily_budget_remaining() <= 0:
+            warnings_out.append({
+                "code": "llm_skipped_daily_budget_exhausted",
+                "message": (
+                    "Locator fallback skipped: daily LLM budget "
+                    "exhausted. Filing returned with rules-only coverage."
+                ),
+                "layer": "locator_fallback",
+            })
+        else:
+            located_items_so_far = _spans_to_items_lite(spans, doc)
+            new_spans, l2_warnings = await fallback_locator(
+                doc, located_items_so_far, missing_now, usage=usage
+            )
+            warnings_out.extend(l2_warnings)
+            if new_spans:
+                spans = _merge_and_recompute(spans + new_spans, len(doc.text))
 
     items: list[ExtractedItem] = []
     for span in spans:
@@ -234,18 +264,29 @@ async def extract_filing(
     validator_warnings = await validate(items, len(doc.text), meta)
     warnings_out.extend(validator_warnings)
 
-    # Layer 1 — status resolver. Only fires when Layer 2 did not consume the
-    # call budget AND validator flagged title_mismatch on extracted items.
-    if usage.calls == 0 and is_configured():
+    # Layer 1 — status resolver. Fires when validator flagged title_mismatch
+    # on extracted items AND the per-request LLM budget is not exhausted.
+    # With MAX_LLM_CALLS_PER_REQUEST > 1 this can run after Layer 2.
+    if is_configured() and usage.calls < MAX_LLM_CALLS_PER_REQUEST:
         title_mismatches = [
             w for w in validator_warnings
             if w.get("code") == "title_mismatch"
         ]
         if title_mismatches:
-            items, l1_warnings = await resolve_statuses(
-                items, title_mismatches, usage=usage
-            )
-            warnings_out.extend(l1_warnings)
+            if daily_budget_remaining() <= 0:
+                warnings_out.append({
+                    "code": "llm_skipped_daily_budget_exhausted",
+                    "message": (
+                        "Status resolver skipped: daily LLM budget "
+                        "exhausted. Statuses returned as detected by rules."
+                    ),
+                    "layer": "status_resolver",
+                })
+            else:
+                items, l1_warnings = await resolve_statuses(
+                    items, title_mismatches, usage=usage
+                )
+                warnings_out.extend(l1_warnings)
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     stats = {
@@ -272,6 +313,24 @@ async def extract_filing(
         "llm_output_tokens": usage.output_tokens,
         "estimated_cost_usd": round(usage.cost_usd, 6),
     }
+
+    log_event(
+        LOG,
+        "pipeline.done",
+        cik=meta.cik,
+        accession_number=meta.accession_number,
+        form=meta.form,
+        format=fmt,
+        items_extracted=stats["items_extracted"],
+        items_missing=stats["items_missing"],
+        toc=stats["strategies"]["toc"],
+        heading=stats["strategies"]["heading"],
+        llm=stats["strategies"]["llm"],
+        llm_calls=usage.calls,
+        warnings_count=len(warnings_out),
+        duration_ms=duration_ms,
+        fetch_ms=fetch_ms,
+    )
 
     return {
         "filing": _filing_dict(meta),
