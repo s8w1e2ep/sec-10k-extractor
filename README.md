@@ -111,16 +111,21 @@ Phase 5 confirmed the design works: AAPL FY 1996 Item 14 was correctly *located*
 
 ## Eval results
 
-10 hand-curated fixtures. Latest live-deploy report: [`eval/results/eval-20260430-145456.md`](./eval/results/eval-20260430-145456.md). Local-baseline report (faster, cache-warm): [`eval/results/eval-20260430-141249.md`](./eval/results/eval-20260430-141249.md).
+10 hand-curated fixtures. Latest live-deploy report: [`eval/results/eval-20260430-155201.md`](./eval/results/eval-20260430-155201.md). Local-baseline report (faster, cache-warm): [`eval/results/eval-20260430-152118.md`](./eval/results/eval-20260430-152118.md).
 
 | Pass-bar check | Threshold | Local (cache-warm) | Live (Zeabur, cold) |
 |---|---|---|---|
 | `items_recall` | ≥ 0.90 | **1.000** | **1.000** |
 | `status_correctness` | ≥ 0.85 | **1.000** (n=2 with overrides) | **1.000** (n=2) |
-| p95 latency on `modern_clean` | ≤ 30 s | **1114 ms** | **4821 ms** |
+| p95 latency on `modern_clean` | ≤ 30 s | **1237 ms** | **4554 ms** |
 | Total LLM cost | — | **$0.00** | **$0.00** |
+| Total warnings across all fixtures | — | **2** | **2** |
 
-The live numbers are slower because the Zeabur container starts with an empty fetcher cache (warms over re-runs) and the SEC fetch hops the public internet rather than localhost. Pass bar still ~6× under threshold.
+The live numbers are slower because the Zeabur container starts with an empty fetcher cache (warms over re-runs) and the SEC fetch hops the public internet rather than localhost. Pass bar ~6× under threshold either way.
+
+The two remaining warnings are *genuine validator signals*, not parser noise:
+- AAPL FY 1996 Item 14: pre-SOX "Exhibits..." vs post-SOX canonical "Principal Accountant Fees" — the era-renumber known limitation logged in `decisions.md`.
+- BRK FY 2025 Item 14: filer wrote an unusual IBR-like opener ("Except for the information set forth under the caption…") that didn't match my IBR-detection length threshold; the title check correctly flags it for grader inspection.
 
 Per-category coverage (six of eight categories from `spec.md` §5.1):
 
@@ -147,7 +152,7 @@ Recall progression: **0.687 → 0.861 → 0.991 → 1.000** across four iteratio
 
 1. **Item 14 / 15 era-renumbering (deferred Phase 8).** Sarbanes-Oxley (2003) split pre-2003 "Item 14. Exhibits" into Item 14 (Principal Accountant Fees, new) and Item 15 (Exhibits, renumbered). Same NUMBER 14 carries different CONTENT across eras. Our locator labels detected items using the canonical (post-2003) title, so AAPL FY 1996's Item 14 (containing 20 KB of exhibits) shows up in the response with title "Principal Accountant Fees". Number and content are correct; title is era-mismatched. The validator catches it via `title_mismatch` warning. Logged in [`decisions.md`](./decisions.md).
 
-2. **TOC-page-header artefact in some fixtures.** Newmont, NVDA, JPMorgan, Walmart all emit `title_mismatch` warnings where the detected heading is "Table of Contents" rather than the section title. The item is *located correctly* — the section anchor offset just lands on a "Table of Contents" page-header that appears at the top of each PDF page in some HTML templates, with the real "Item N." heading a few lines later. Validator's heading extractor sees the wrong line. Filtering known page-header text is a Phase 8 fix.
+2. **~~TOC-page-header artefact in some fixtures.~~** ~~Newmont, NVDA, JPMorgan, Walmart all emit `title_mismatch` warnings where the detected heading is "Table of Contents"…~~ **Resolved in Phase 8**: pipeline now trims known page-header artefacts (`Table of Contents`, `Parts II and III`, bare/dashed page numbers) from the start of `content_text` and adjusts `char_range.start` accordingly. Validator additionally handles Walmart-style multi-line headings (`ITEM N.\nTITLE`). Eval warnings dropped from ~17 to 2.
 
 3. **Eval set lacks two categories.** `amendment` (10-K/A) and `small_cap` from [`spec.md` §5.1](./spec.md) are uncovered. No 10-K/A appeared in any candidate company's recent filings; small-cap sourcing needs deliberate research. The pass bar is met without them, but the rubric's "intentionally stresses edge cases" axis is partially weakened. See [`prompts/03-eval-set-design.md`](./prompts/03-eval-set-design.md).
 
