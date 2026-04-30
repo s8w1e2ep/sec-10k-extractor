@@ -55,13 +55,17 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
     - AAPL FY 1996 (plain text): one `title_mismatch` on Item 14 (era-rename, the deferred Phase 8 limitation that v3 self-verification catches as designed)
 - [x] **Commit**: `Phase 3: validator + self-verification warnings`
 
-## Phase 4 — LLM fallback locator  (≈ 30 min)
+## Phase 4 — LLM-backed resolvers  (built post-Phase 8, after user pushback on rules maintenance)
 
-- [ ] `extractor/locator.py` — `llm_fallback` strategy; triggered only on residual gaps > 5 KB; max 1 call/request; max 50 KB input
-- [ ] Prompt template at `extractor/prompts/locator_fallback.md`
-- [ ] Cost tracking: input/output tokens, estimated USD; surfaced in `stats`
-- [ ] `tests/test_locator_llm.py` — mocked Anthropic client; verify cap is enforced
-- [ ] **Commit**: `Phase 4: LLM fallback locator with hard cost caps`
+Reframed from the original "LLM fallback locator" plan into **two layers** sharing one per-request call:
+
+- [x] **Layer 1 — status resolver**: when validator emits `title_mismatch` on an `extracted` item, ask Claude Haiku 4.5 to confirm/correct the status. Targets BRK FY 2025 Item 14 (unusual IBR phrasing) and AAPL FY 1996 Item 14 (era-rename). Live eval: BRK status flipped `extracted → incorporated_by_reference`; FY 1996 kept `extracted` correctly.
+- [x] **Layer 2 — locator fallback**: when rules left required items unlocated, send first 50 KB + missing list to LLM, recover offsets via `text.find(snippet)`. Currently no eval fixture triggers it (rules at 100% recall); hook is wired and tested.
+- [x] `extractor/llm_client.py` — supports both `ANTHROPIC_API_KEY` (X-Api-Key) and `CLAUDE_CODE_OAUTH_TOKEN` (Bearer + `anthropic-beta: oauth-2025-04-20` + Claude Code identifier prefix on the system prompt). Live verified — first try got 401 because Agent advice ("send OAuth via x-api-key") was wrong; fix in commit `16663df`.
+- [x] `extractor/prompts/{status_resolver,locator_fallback}.md` — prompt templates with explicit era guidance (pre-2003 Item 14, pre-2011 Item 4, BRK-style IBR).
+- [x] Cost tracking: 1-call cap enforced in pipeline (Layer 2 wins on conflict); 50KB input cap inside the client; `llm_calls` / `estimated_cost_usd` in `stats`. Live eval cost: **$0.0039 across 10 fixtures** (2 LLM calls).
+- [x] `tests/test_llm_resolver.py` — 10 mocked tests; total now 75 unit tests passing.
+- [x] **Commit**: `Phase 4: LLM-backed status resolver + locator fallback` (`3fceb4f`); auth fix `16663df`.
 
 ## Phase 5 — Eval set + harness  (≈ 40 min)
 
@@ -103,6 +107,6 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 This phase captures non-trivial work that surfaced after the original plan shipped.
 
 - [x] **Trim repeating-page-header artefacts from content_text.** User pushed back on the lingering `title_mismatch` warnings: did the "Table of Contents" / "Parts X and Y" prefixes corrupt content extraction? Yes-ish — items were located correctly but content_text contained page-header noise that would have muddied grader-facing output and could miscategorize short reserved/N/A items at the length threshold. Fixed in two layers: (a) `extractor/normalizer.py` adds `is_boilerplate_line()` + `trim_leading_boilerplate()` with conservative patterns; (b) `extractor/pipeline.py` advances `char_range.start` past trimmed boilerplate so the response contract stays consistent; (c) `extractor/validator.py:_extract_section_heading` handles Walmart-style multi-line `ITEM N.\nTITLE` and rejects degenerate `(.+?)` regex backtracking matches. Local eval: warnings ~17 → 2 (remaining 2 are genuine — AAPL FY1996 Item 14 SOX rename, BRK Item 14 unusual IBR opener).
+- [x] **Phase 4 LLM resolvers built** (above). The 2 genuine title_mismatch warnings now drive a status correction instead of remaining unresolved.
 - [ ] Add `amendment` (10-K/A) and `small_cap` fixtures to eval set
-- [ ] Item 14 / 15 SOX renumber: per-era titles in `CanonicalItem`
-- [ ] LLM fallback locator (Phase 4 deferred indefinitely — revisit only if a future fixture has residual gap > 5 KB after rules)
+- [ ] Item 14 / 15 SOX renumber: per-era titles in `CanonicalItem` (status is now correct via Phase 4 resolver; title is still cosmetic)

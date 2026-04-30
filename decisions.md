@@ -378,4 +378,68 @@ status_correctness stays at 1.000; p95 modern_clean improves slightly
 
 ---
 
+## Phase 4 — LLM-backed resolvers (built post-Phase 8)
+
+### Why this came back from the dead
+
+Phase 4 was deferred indefinitely after Phase 5 hit 100% rules-only
+recall. Phase 8 cleaned up the boilerplate-noise validator warnings and
+left two *genuine* signals: BRK FY 2025 Item 14 (filer wrote an unusual
+IBR opener that didn't match my length threshold) and AAPL FY 1996 Item
+14 (era-rename: pre-SOX content under post-SOX canonical title).
+
+The user's pushback that turned this around (paraphrasing): "持續疊規則
+的維護成本會爆 — LLM 應該是用來處理比較非制式的 SEC 報表." Adding more
+ad-hoc rules for each new filer's quirks is unsustainable; the right
+shape is rules-handle-90%, LLM-handles-the-tail.
+
+### Two layers, sharing one call/request
+
+Reframed from the original spec's "LLM fallback locator" into:
+
+- **Layer 1 — status resolver**: when validator emits `title_mismatch` on
+  an `extracted` item, send the section's first 2 KB + canonical title to
+  Claude Haiku 4.5 and ask "is this `extracted` / IBR / N/A / reserved?"
+  Catches era-renames and unusual IBR phrasings.
+- **Layer 2 — locator fallback**: when rules left required items
+  unlocated, send first 50 KB + missing item numbers; LLM returns text
+  snippets we then `text.find()` in the doc to recover offsets.
+
+Per-request cap: Layer 2 wins if both want to fire (missing items >
+wrong status). Cost lands in `stats.llm_calls` / `estimated_cost_usd`.
+Live eval cost: $0.0039 across 10 fixtures (only 2 fire — BRK + FY 1996).
+
+### CLAUDE_CODE_OAUTH_TOKEN auth — don't trust agent advice blindly
+
+The Anthropic API rejects Claude Code OAuth tokens (`sk-ant-oat…`) sent
+via `Authorization: Bearer` *unless* you also include the
+`anthropic-beta: oauth-2025-04-20` header AND prefix the system prompt
+with the Claude Code identifier line ("You are Claude Code, Anthropic's
+official CLI for Claude."). It also rejects the same tokens sent via
+`x-api-key` with 401 "invalid x-api-key".
+
+I asked the claude-code-guide agent which path was correct; it cited a
+GitHub issue and confidently said "send via x-api-key." I shipped that
+naively. Live test on BRK FY 2025 returned the 401 above. Fix in commit
+`16663df`: detect the OAuth env var, use Bearer + beta + identifier
+prefix; ANTHROPIC_API_KEY path stays as plain X-Api-Key.
+
+Lesson: when the agent's answer touches an authentication detail, verify
+with one live request before pushing. The wrong path costs a deploy
+cycle.
+
+### What I'd revisit
+
+- **Layer 2 has zero coverage on the eval set.** It's wired and unit-
+  tested but no fixture currently exercises it. An `amendment` (10-K/A)
+  fixture might surface this, since amendments often partial-include and
+  could break the locator's "all 23 items must be there" assumption.
+- **Status resolver doesn't see the validator's surrounding context.**
+  It gets the section text + canonical title but not (e.g.) the
+  XBRL-no-us-gaap warning on Item 8 that might independently support a
+  status decision. Probably overkill — keeping the prompt focused was
+  the right call for v1.
+
+---
+
 _Phase 6 onward will append entries here as issues surface._

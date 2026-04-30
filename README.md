@@ -2,7 +2,7 @@
 
 > Submission for **Task 3** of an AI Coding Test: SEC 10-K item-level structured extraction. Rules-first pipeline that takes a filing (by `CIK + accession_number` or `file_url`) and emits structured JSON across the canonical 10-K item set, distinguishing real content from `incorporated_by_reference` / `not_applicable` / `reserved` per item.
 
-**Status**: shipped. Eval set passes all bars with zero LLM cost both locally and against the live deployment.
+**Status**: shipped. Eval set passes all bars; rules carry the head, LLM (Claude Haiku 4.5) handles the long tail at ≤ 1 call per request.
 
 **Live URL**: <https://sec-10k.zeabur.app> ([`/healthz`](https://sec-10k.zeabur.app/healthz) · [HTML form](https://sec-10k.zeabur.app/))
 
@@ -45,8 +45,11 @@ Response shape and full I/O contract: [`spec.md` §4.3](./spec.md).
 Required env var on Zeabur:
 - `SEC_CONTACT_EMAIL` — real email used in the SEC User-Agent header. SEC returns 403 without one.
 
-Optional:
-- `ANTHROPIC_API_KEY` — reserved for the (currently deferred) LLM fallback locator. Not consumed by v1.
+Optional (set either one, not both — OAuth token is preferred when both are present):
+- `CLAUDE_CODE_OAUTH_TOKEN` — long-lived OAuth credential issued by `claude setup-token`. Sent as `Authorization: Bearer` with `anthropic-beta: oauth-2025-04-20`; the system prompt is auto-prefixed with the Claude Code identifier line as the API requires.
+- `ANTHROPIC_API_KEY` — regular API key. Sent as `x-api-key`.
+
+Either one enables the two LLM-backed fallbacks (status resolver + locator fallback, see Architecture below). Without a credential the pipeline runs rules-only and any unresolved validator warnings are surfaced honestly.
 
 Health check: `GET /healthz`. Cache directory: `/app/cache` (gitignored; volume-mountable).
 
@@ -71,8 +74,9 @@ See [`plan.md` §1](./plan.md) for the diagram. Eight-stage pipeline:
 2. Fetcher        — User-Agent + 10 req/s token bucket + on-disk cache + *.sec.gov allowlist
 3. Format detect  — html_modern | html_legacy | plain_text
 4. Normalizer     — raw → text + offset map. char_range offsets are into this text.
-5. Locator        — toc_anchor → heading_regex → llm_fallback (Phase 4, deferred — see below)
-6. Status detect  — per-item rules-only classifier (no LLM)
+5. Locator        — toc_anchor → heading_regex → (LLM fallback if items missing)
+6. Status detect  — per-item rules-only classifier; LLM resolver re-runs when
+                    validator flags title_mismatch on extracted items
 7. Validator      — char-range geometry, brevity, monotonicity, title fuzzy-match,
                     XBRL Company Facts cross-check; emits warnings
 8. Assemble       — output dict per spec §4.3
@@ -85,9 +89,13 @@ See [`plan.md` §1](./plan.md) for the diagram. Eight-stage pipeline:
    - Link text is just title; item number in href fragment (`#item_1_business` — MSFT/BRK convention)
    - TOC entry split across cells; row-level `<tr>`/`<li>` text matches "Item N. ..." (Apollo/Tesla convention)
 2. **`heading_regex`** runs always, fills gaps TOC missed, votes on disagreement (TOC wins on conflict). Uses the canonical-index monotonicity filter to drop in-body cross-reference matches.
-3. **`llm_fallback`** — designed (`plan.md` §2.6) but **not implemented**. After Phase 5 the rules covered 100% of the eval set with zero residual gaps; the trigger condition (residual gap > 5 KB) was satisfied on no fixture, so building the fallback would have shipped untested. Deferred until a future fixture surfaces a real long-tail case. See [`prompts/02-strategy-ladder.md`](./prompts/02-strategy-ladder.md).
+3. **`llm_fallback`** — fenced last resort. Fires when rules left required items unlocated; sends the first 50 KB of normalized text + the missing item numbers to Claude Haiku 4.5; LLM returns text snippets we then `text.find()` in the doc to recover offsets. Adds spans with `resolved_by="llm"`. On the current eval set this never triggers (rules are at 100% recall) — the path is wired and tested, waiting for a future weird filing to need it.
 
-**Cost discipline**: the design contract (`spec.md` §1) is that "if a 1996 plain-text filing and a 2024 inline-XBRL filing both cost the same number of LLM tokens to parse, we have built the wrong system." Phase 5 confirmed this empirically — every fixture cost $0 in LLM.
+**LLM status resolver** (separate from the locator path): when `validator` emits `title_mismatch` on an `extracted` item, we ask the LLM to confirm or correct the status. Catches era-renames (pre-2003 Item 14 was today's Item 15 content) and unusual IBR phrasings (Berkshire-style "Except for the information set forth under the caption…") that pure rules miss. On the live eval this fires on 2 of 10 fixtures (BRK FY 2025, AAPL FY 1996) for a combined cost of **$0.0039**; the other 8 cost $0.
+
+**Per-request 1-call cap**: the locator fallback and the status resolver share one budget. If both want to fire, locator fallback wins (missing items > wrong status). Input is capped at 50 KB; cost lands in `stats.llm_calls` / `estimated_cost_usd`.
+
+**Cost discipline**: the design contract (`spec.md` §1) is that "if a 1996 plain-text filing and a 2024 inline-XBRL filing both cost the same number of LLM tokens to parse, we have built the wrong system." A clean modern filing still costs $0; only the long-tail fixtures pay.
 
 ---
 
@@ -105,27 +113,27 @@ We don't have ground truth on `content_text`, so the validator cross-checks agai
 | `title_mismatch` | heading text in content_text vs canonical (rapidfuzz partial_ratio < 75; aliases checked) |
 | `xbrl_no_us_gaap` / `xbrl_not_filed` | Item 8 extracted but Company Facts API empty / 404 (skipped pre-2009) |
 
-Phase 5 confirmed the design works: AAPL FY 1996 Item 14 was correctly *located* but our canonical title is the post-SOX rename — the validator caught it as `title_mismatch` (score=57). The check surfaces issues we know about rather than silently hiding them.
+The design works as a self-correcting loop: the validator's `title_mismatch` is what triggers the LLM status resolver. AAPL FY 1996 Item 14 (pre-SOX "Exhibits…" content under the post-SOX canonical title) and BRK FY 2025 Item 14 (unusual IBR opener) both surface here; the LLM then either confirms the status (FY 1996 — content is real, status stays `extracted`) or corrects it (BRK — content was a forward-reference, status flips to `incorporated_by_reference`).
 
 ---
 
 ## Eval results
 
-10 hand-curated fixtures. Latest live-deploy report: [`eval/results/eval-20260430-155201.md`](./eval/results/eval-20260430-155201.md). Local-baseline report (faster, cache-warm): [`eval/results/eval-20260430-152118.md`](./eval/results/eval-20260430-152118.md).
+10 hand-curated fixtures. Latest live-deploy report (LLM enabled): [`eval/results/eval-20260430-170649.md`](./eval/results/eval-20260430-170649.md). Local rules-only baseline (no credential, cache-warm): [`eval/results/eval-20260430-171058.md`](./eval/results/eval-20260430-171058.md).
 
-| Pass-bar check | Threshold | Local (cache-warm) | Live (Zeabur, cold) |
+| Pass-bar check | Threshold | Local (rules-only, cache-warm) | Live (Zeabur, LLM enabled, cold) |
 |---|---|---|---|
 | `items_recall` | ≥ 0.90 | **1.000** | **1.000** |
 | `status_correctness` | ≥ 0.85 | **1.000** (n=2 with overrides) | **1.000** (n=2) |
-| p95 latency on `modern_clean` | ≤ 30 s | **1237 ms** | **4554 ms** |
-| Total LLM cost | — | **$0.00** | **$0.00** |
-| Total warnings across all fixtures | — | **2** | **2** |
+| p95 latency on `modern_clean` | ≤ 30 s | **1092 ms** | **4641 ms** |
+| Total LLM calls | — | **0** | **2** |
+| Total LLM cost | — | **$0.0000** | **$0.0039** |
 
 The live numbers are slower because the Zeabur container starts with an empty fetcher cache (warms over re-runs) and the SEC fetch hops the public internet rather than localhost. Pass bar ~6× under threshold either way.
 
-The two remaining warnings are *genuine validator signals*, not parser noise:
-- AAPL FY 1996 Item 14: pre-SOX "Exhibits..." vs post-SOX canonical "Principal Accountant Fees" — the era-renumber known limitation logged in `decisions.md`.
-- BRK FY 2025 Item 14: filer wrote an unusual IBR-like opener ("Except for the information set forth under the caption…") that didn't match my IBR-detection length threshold; the title check correctly flags it for grader inspection.
+The 2 LLM calls on the live run are the status resolver firing on the same two `title_mismatch` warnings the rules-only run produced:
+- BRK FY 2025 Item 14: rules locator placed the section correctly but the rules status detector marked it `extracted`. LLM confirms it's actually `incorporated_by_reference` (the filer's "Except for the information set forth under the caption…" opener is a forward-reference). **Status corrected.**
+- AAPL FY 1996 Item 14: pre-SOX content (Exhibits and reports on Form 8-K) under post-SOX canonical title. LLM keeps `extracted` (content is real), confirming the title-mismatch is era-cosmetic, not a status bug.
 
 Per-category coverage (six of eight categories from `spec.md` §5.1):
 
@@ -150,7 +158,7 @@ Recall progression: **0.687 → 0.861 → 0.991 → 1.000** across four iteratio
 
 ## Honest failure modes
 
-1. **Item 14 / 15 era-renumbering (deferred Phase 8).** Sarbanes-Oxley (2003) split pre-2003 "Item 14. Exhibits" into Item 14 (Principal Accountant Fees, new) and Item 15 (Exhibits, renumbered). Same NUMBER 14 carries different CONTENT across eras. Our locator labels detected items using the canonical (post-2003) title, so AAPL FY 1996's Item 14 (containing 20 KB of exhibits) shows up in the response with title "Principal Accountant Fees". Number and content are correct; title is era-mismatched. The validator catches it via `title_mismatch` warning. Logged in [`decisions.md`](./decisions.md).
+1. **Item 14 / 15 era-renumbering — title is still cosmetic.** Sarbanes-Oxley (2003) split pre-2003 "Item 14. Exhibits" into Item 14 (Principal Accountant Fees, new) and Item 15 (Exhibits, renumbered). Same NUMBER 14 carries different CONTENT across eras. AAPL FY 1996's Item 14 still emits as `item_title: "Principal Accountant Fees and Services"` because we resolve titles from the catalog, not from the filer's heading text. The status resolver (Phase 4) catches the *status* implication and keeps it correctly `extracted`, but the visible title is still era-mismatched. Per-era titles in `CanonicalItem` are the proper fix; logged for v2 in [`decisions.md`](./decisions.md).
 
 2. **~~TOC-page-header artefact in some fixtures.~~** ~~Newmont, NVDA, JPMorgan, Walmart all emit `title_mismatch` warnings where the detected heading is "Table of Contents"…~~ **Resolved in Phase 8**: pipeline now trims known page-header artefacts (`Table of Contents`, `Parts II and III`, bare/dashed page numbers) from the start of `content_text` and adjusts `char_range.start` accordingly. Validator additionally handles Walmart-style multi-line headings (`ITEM N.\nTITLE`). Eval warnings dropped from ~17 to 2.
 
@@ -165,7 +173,7 @@ Recall progression: **0.687 → 0.861 → 0.991 → 1.000** across four iteratio
 [`prompts/`](./prompts/) — three substantive AI-collaboration writeups; the grader was told they would read these:
 
 - [`01-framing.md`](./prompts/01-framing.md) — three prompts that reshaped the spec (domain-unfamiliarity question, pushback on a decorative `confidence` field, three-line scope confirmation).
-- [`02-strategy-ladder.md`](./prompts/02-strategy-ladder.md) — rules-first design and the **"先做 A"** decision that caught 3 real bugs by ordering Phase 5 (eval) before Phase 4 (LLM fallback). After Phase 5 hit 100% recall, Phase 4 was indefinitely deferred.
+- [`02-strategy-ladder.md`](./prompts/02-strategy-ladder.md) — rules-first design and the **"先做 A"** decision that caught 3 real bugs by ordering Phase 5 (eval) before Phase 4 (LLM fallback). Phase 4 was eventually built — but as two layers (status resolver + locator fallback), reframed by the user's pushback that "持續疊規則的維護成本會爆".
 - [`03-eval-set-design.md`](./prompts/03-eval-set-design.md) — eval-set construction; era-notes prompt that surfaced a latent catalog bug (catalog only knew about 2 of 7 era cutoffs); CIK 1411494 mishap.
 
 Companion: [`decisions.md`](./decisions.md) — implementation journal of execution-level issues and decisions made during the build.
