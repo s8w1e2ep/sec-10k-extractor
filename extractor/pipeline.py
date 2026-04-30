@@ -1,5 +1,6 @@
 """Top-level pipeline: input → resolve → fetch → normalize → locate → classify."""
 
+import asyncio
 import time
 import warnings
 from datetime import date
@@ -8,6 +9,14 @@ from typing import Any
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+
+# Hard cap on raw filing size. The largest realistic 10-K we've seen is
+# ~15 MB (JPM with full Industry Guide 3 disclosures); 30 MB leaves
+# generous headroom while protecting the single-worker server from a
+# pathological filing that would burn 200+ MB of resident memory during
+# BeautifulSoup parsing and block the event loop for the entire parse.
+MAX_RAW_HTML_BYTES = 30 * 1024 * 1024
 
 from .canonical_items import expected_items_for_period, part_sort_key
 from .fetcher import fetch
@@ -28,6 +37,26 @@ from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
 from .types import ExtractedItem, FilingMetadata, ItemSpan, NormalizedDoc
 from .validator import validate
+
+
+class OversizedFilingError(Exception):
+    """Raised when the raw filing exceeds MAX_RAW_HTML_BYTES.
+
+    Parsing a >30 MB HTML doc with BeautifulSoup would burn several
+    hundred MB of resident memory and block the event loop for several
+    seconds. The single-worker server (rate-limit-required) cannot
+    afford that — every other in-flight request would queue. Reject
+    early with HTTP 413 instead.
+    """
+
+    def __init__(self, size_bytes: int, limit_bytes: int = MAX_RAW_HTML_BYTES):
+        self.size_bytes = size_bytes
+        self.limit_bytes = limit_bytes
+        super().__init__(
+            f"Filing exceeds size limit: "
+            f"{size_bytes / 1024 / 1024:.1f} MB > "
+            f"{limit_bytes / 1024 / 1024:.1f} MB"
+        )
 
 
 class UnsupportedFormError(Exception):
@@ -79,20 +108,19 @@ async def extract_filing(
     raw = await fetch(meta.primary_document_url)
     fetch_ms = int((time.monotonic() - t_fetch) * 1000)
 
+    if len(raw) > MAX_RAW_HTML_BYTES:
+        raise OversizedFilingError(len(raw))
+
     fmt = detect_format(raw, url=meta.primary_document_url)
 
     warnings_out: list[dict] = []
     usage = LLMUsage()
 
-    soup = None
-    doc: NormalizedDoc
-    if fmt == "plain_text":
-        doc = normalize_plain_text(raw)
-    else:
-        soup = BeautifulSoup(raw, "lxml")
-        for tag in soup(["script", "style", "noscript"]):
-            tag.decompose()
-        doc = normalize_html(soup, fmt)
+    # Offload BeautifulSoup parsing + tree walks to a worker thread so
+    # the event loop stays responsive during the 1–5 s of CPU-bound work
+    # on large filings. lxml releases the GIL during parsing, so multiple
+    # concurrent /extract calls can actually parallelise on multi-core.
+    soup, doc = await asyncio.to_thread(_parse_and_normalize, raw, fmt)
 
     toc_spans = locate_by_toc_anchor(soup, doc) if soup is not None else []
     heading_spans = locate_by_heading_regex(doc)
@@ -209,6 +237,27 @@ async def extract_filing(
         "stats": stats,
         "warnings": warnings_out,
     }
+
+
+def _parse_and_normalize(
+    raw: bytes, fmt: str
+) -> tuple[BeautifulSoup | None, NormalizedDoc]:
+    """Sync block bundling all CPU-heavy parsing/normalization in one call.
+
+    Designed to be invoked via `await asyncio.to_thread(...)` so the event
+    loop stays free to serve healthz / cached requests / form-gate
+    rejections while a large filing is being parsed in a worker thread.
+
+    Plain text path doesn't need BeautifulSoup; returns (None, doc).
+    HTML path returns (soup, doc) — the locator needs the parsed tree.
+    """
+    if fmt == "plain_text":
+        return None, normalize_plain_text(raw)
+    soup = BeautifulSoup(raw, "lxml")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    doc = normalize_html(soup, fmt)
+    return soup, doc
 
 
 def _spans_to_items_lite(

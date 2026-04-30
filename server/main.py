@@ -7,7 +7,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, model_validator
 
-from extractor.pipeline import UnsupportedFormError, extract_filing
+from extractor.pipeline import (
+    OversizedFilingError,
+    UnsupportedFormError,
+    extract_filing,
+)
 
 
 app = FastAPI(title="SEC 10-K Extractor", version="0.1.0")
@@ -44,6 +48,17 @@ def _unsupported_form_response(e: UnsupportedFormError) -> JSONResponse:
     )
 
 
+def _oversized_response(e: OversizedFilingError) -> JSONResponse:
+    return JSONResponse(
+        status_code=413,
+        content={
+            "error": str(e),
+            "size_bytes": e.size_bytes,
+            "limit_bytes": e.limit_bytes,
+        },
+    )
+
+
 @app.post("/extract")
 async def extract(req: ExtractRequest):
     try:
@@ -60,6 +75,8 @@ async def extract(req: ExtractRequest):
         raise HTTPException(status_code=504, detail="Extraction exceeded 90s timeout")
     except UnsupportedFormError as e:
         return _unsupported_form_response(e)
+    except OversizedFilingError as e:
+        return _oversized_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -76,6 +93,8 @@ async def extract_get(cik: str, accession: str):
         raise HTTPException(status_code=504, detail="Extraction exceeded 90s timeout")
     except UnsupportedFormError as e:
         return _unsupported_form_response(e)
+    except OversizedFilingError as e:
+        return _oversized_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
