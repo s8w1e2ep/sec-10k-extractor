@@ -97,23 +97,39 @@ async def resolve_by_cik_accession(
     )
 
 
+_NEW_URL_RE = re.compile(
+    r"https?://www\.sec\.gov/Archives/edgar/data/(\d+)/(\d{18})/(.+)$"
+)
+_OLD_URL_RE = re.compile(
+    r"https?://www\.sec\.gov/Archives/edgar/data/(\d+)/(\d{10}-\d{2}-\d{6})\.txt$"
+)
+
+
 async def resolve_by_file_url(file_url: str) -> FilingMetadata:
-    """Parse CIK + accession from an EDGAR Archives URL and enrich via Submissions API."""
-    m = re.match(
-        r"https?://www\.sec\.gov/Archives/edgar/data/(\d+)/(\d{18})/(.+)$",
-        file_url,
-    )
-    if not m:
-        raise ValueError(f"Could not parse CIK/accession from URL: {file_url!r}")
-    cik_int_str = m.group(1)
-    acc_nodashes = m.group(2)
+    """Parse CIK + accession from an EDGAR Archives URL.
+
+    Supports both new-style (post-2002) `/data/{cik}/{acc_no_dashes}/{file}`
+    and old-style `/data/{cik}/{acc_dashed}.txt` (full-submission .txt).
+    Enriches metadata via Submissions API when available.
+    """
+    m = _NEW_URL_RE.match(file_url)
+    if m:
+        cik_int_str = m.group(1)
+        acc_nodashes = m.group(2)
+        accession_dashed = (
+            f"{acc_nodashes[:10]}-{acc_nodashes[10:12]}-{acc_nodashes[12:]}"
+        )
+    else:
+        m = _OLD_URL_RE.match(file_url)
+        if not m:
+            raise ValueError(f"Could not parse CIK/accession from URL: {file_url!r}")
+        cik_int_str = m.group(1)
+        accession_dashed = m.group(2)
+
     cik_padded = _normalize_cik(cik_int_str)
-    accession_dashed = (
-        f"{acc_nodashes[:10]}-{acc_nodashes[10:12]}-{acc_nodashes[12:]}"
-    )
 
     try:
-        return await resolve_by_cik_accession(cik_int_str, accession_dashed)
+        meta = await resolve_by_cik_accession(cik_int_str, accession_dashed)
     except Exception:
         return FilingMetadata(
             cik=cik_padded,
@@ -124,3 +140,13 @@ async def resolve_by_file_url(file_url: str) -> FilingMetadata:
             primary_document_url=file_url,
             company_name="",
         )
+    # If caller passed a specific URL, prefer it over the Submissions-API-derived one.
+    return FilingMetadata(
+        cik=meta.cik,
+        accession_number=meta.accession_number,
+        form=meta.form,
+        filing_date=meta.filing_date,
+        period_of_report=meta.period_of_report,
+        primary_document_url=file_url,
+        company_name=meta.company_name,
+    )

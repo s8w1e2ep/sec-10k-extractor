@@ -10,8 +10,8 @@ from .types import CanonicalItem
 CANONICAL_ITEMS: list[CanonicalItem] = [
     # Part I
     CanonicalItem("I", "1", "Business"),
-    CanonicalItem("I", "1A", "Risk Factors"),
-    CanonicalItem("I", "1B", "Unresolved Staff Comments"),
+    CanonicalItem("I", "1A", "Risk Factors", valid_from_year=2005),
+    CanonicalItem("I", "1B", "Unresolved Staff Comments", valid_from_year=2005),
     CanonicalItem("I", "1C", "Cybersecurity", valid_from_year=2023),
     CanonicalItem("I", "2", "Properties"),
     CanonicalItem("I", "3", "Legal Proceedings"),
@@ -44,6 +44,7 @@ CANONICAL_ITEMS: list[CanonicalItem] = [
         "II",
         "7A",
         "Quantitative and Qualitative Disclosures About Market Risk",
+        valid_from_year=1997,
     ),
     CanonicalItem("II", "8", "Financial Statements and Supplementary Data"),
     CanonicalItem(
@@ -51,8 +52,8 @@ CANONICAL_ITEMS: list[CanonicalItem] = [
         "9",
         "Changes in and Disagreements with Accountants on Accounting and Financial Disclosure",
     ),
-    CanonicalItem("II", "9A", "Controls and Procedures"),
-    CanonicalItem("II", "9B", "Other Information"),
+    CanonicalItem("II", "9A", "Controls and Procedures", valid_from_year=2003),
+    CanonicalItem("II", "9B", "Other Information", valid_from_year=2004),
     CanonicalItem(
         "II",
         "9C",
@@ -76,8 +77,16 @@ CANONICAL_ITEMS: list[CanonicalItem] = [
     ),
     CanonicalItem("III", "14", "Principal Accountant Fees and Services"),
     # Part IV
-    CanonicalItem("IV", "15", "Exhibits, Financial Statement Schedules"),
-    CanonicalItem("IV", "16", "Form 10-K Summary"),
+    # Pre-2003: "Item 14. Exhibits..." was the last item (no 15 or 16). Sarbanes-
+    # Oxley renumbered Exhibits to Item 15 and added 14 as Principal Accountant
+    # Fees. Item 16 (Form 10-K Summary) was added in 2016.
+    CanonicalItem(
+        "IV",
+        "15",
+        "Exhibits, Financial Statement Schedules",
+        valid_from_year=2003,
+    ),
+    CanonicalItem("IV", "16", "Form 10-K Summary", valid_from_year=2016),
 ]
 
 
@@ -140,3 +149,14 @@ def get_canonical_item(item_number: str) -> CanonicalItem | None:
         if item.item_number.upper() == target:
             return item
     return None
+
+
+_CANONICAL_INDEX = {item.item_number.upper(): i for i, item in enumerate(CANONICAL_ITEMS)}
+
+
+def canonical_index(item_number: str) -> int | None:
+    """Position of the item in the canonical sequence (Part I → IV).
+
+    Used by locators to filter out-of-order matches.
+    """
+    return _CANONICAL_INDEX.get(item_number.strip().upper())

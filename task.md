@@ -33,11 +33,16 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 ## Phase 2 — Heading regex + plain text  (≈ 40 min)
 
-- [ ] `extractor/locator.py` — heading-regex strategy; pattern + monotonic ordering filter; runs on every filing as a sanity check
-- [ ] `extractor/normalizer.py` — plain-text branch; form-feed handling; ALL-CAPS heading detection
-- [ ] `tests/fixtures/` — pre-2002 plain-text filing committed (small, representative)
-- [ ] `tests/test_pipeline_plain_text.py` — items_recall ≥ 0.8 against the fixture
-- [ ] **Commit**: `Phase 2: heading-regex locator + plain-text normalizer`
+- [x] `extractor/locator.py` — `locate_by_heading_regex` (canonical-index monotonic filter to drop TOC echoes / in-body refs) + `combine_strategies` (TOC wins on >200-char disagreement, heading fills gaps, end-recompute after merge)
+- [x] `extractor/normalizer.py` — `normalize_plain_text` (SEC pseudo-XML wrapper strip, form-feed → newline, isolated-line heading detection requiring prev-blank)
+- [x] `extractor/canonical_items.py` — added `valid_from_year` for 1A (2005), 1B (2005), 7A (1997), 9A (2003), 9B (2004), 15 (2003 renumber), 16 (2016) so `expected_items_for_period` matches real-era filings
+- [x] `extractor/resolver.py` — old-style URL `/data/{cik}/{acc-dashed}.txt` support
+- [x] `tests/fixtures/aapl_1996_10k.txt` — AAPL FY 1996 10-K (271 KB plain-text submission)
+- [x] `tests/test_plain_text.py`, `test_locator_heading.py`, `test_pipeline_plain_text.py` — 19 new unit tests; total 37 passing
+- [x] `tests/smoke_aapl_1996.py` — live integration. AAPL FY1996: 14/14 pre-2003 items located, recall=100%, plain_text format, 0 LLM calls, all heading-regex strategy.
+- [x] **Commit**: `Phase 2: heading-regex locator + plain-text normalizer`
+
+**Known limitation carried forward**: pre-2003 Item 14 was "Exhibits..." (now Item 15). The locator labels detected items by canonical title (post-2003), so AAPL FY1996 Item 14 shows as "Principal Accountant Fees and Services" in the response title even though content is Exhibits. Item NUMBER is correct; title is era-mismatched. Acceptable for v1; flagged for Phase 8.
 
 ## Phase 3 — Validator + warnings  (≈ 30 min)
 

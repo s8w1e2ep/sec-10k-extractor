@@ -12,11 +12,15 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from .canonical_items import expected_items_for_period, part_sort_key
 from .fetcher import fetch
 from .format_detect import detect_format
-from .locator import locate_by_toc_anchor
-from .normalizer import normalize_html
+from .locator import (
+    combine_strategies,
+    locate_by_heading_regex,
+    locate_by_toc_anchor,
+)
+from .normalizer import normalize_html, normalize_plain_text
 from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
-from .types import ExtractedItem, FilingMetadata
+from .types import ExtractedItem, FilingMetadata, NormalizedDoc
 
 
 async def extract_filing(
@@ -43,32 +47,38 @@ async def extract_filing(
     warnings: list[dict] = []
     items: list[ExtractedItem] = []
 
-    if fmt in ("html_modern", "html_legacy"):
+    soup = None
+    doc: NormalizedDoc
+    if fmt == "plain_text":
+        doc = normalize_plain_text(raw)
+    else:
         soup = BeautifulSoup(raw, "lxml")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
         doc = normalize_html(soup, fmt)
-        spans = locate_by_toc_anchor(soup, doc)
-        for span in spans:
-            content = doc.text[span.start:span.end].strip()
-            status = detect_status(span.item_number, content)
-            items.append(
-                ExtractedItem(
-                    part=span.part,
-                    item_number=span.item_number,
-                    item_title=span.item_title,
-                    content_text=content,
-                    char_range_start=span.start,
-                    char_range_end=span.end,
-                    status=status,
-                    resolved_by=span.resolved_by,
-                )
+
+    toc_spans = locate_by_toc_anchor(soup, doc) if soup is not None else []
+    heading_spans = locate_by_heading_regex(doc)
+    spans, locator_warnings = combine_strategies(
+        toc_spans, heading_spans, doc_length=len(doc.text)
+    )
+    warnings.extend(locator_warnings)
+
+    for span in spans:
+        content = doc.text[span.start:span.end].strip()
+        status = detect_status(span.item_number, content)
+        items.append(
+            ExtractedItem(
+                part=span.part,
+                item_number=span.item_number,
+                item_title=span.item_title,
+                content_text=content,
+                char_range_start=span.start,
+                char_range_end=span.end,
+                status=status,
+                resolved_by=span.resolved_by,
             )
-    else:
-        warnings.append({
-            "code": "format_unsupported",
-            "message": f"format={fmt} not supported in Phase 1; deferred to Phase 2",
-        })
+        )
 
     items.sort(key=lambda it: part_sort_key(it.part, it.item_number))
 
