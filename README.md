@@ -2,9 +2,9 @@
 
 > Submission for **Task 3** of an AI Coding Test: SEC 10-K item-level structured extraction. Rules-first pipeline that takes a filing (by `CIK + accession_number` or `file_url`) and emits structured JSON across the canonical 10-K item set, distinguishing real content from `incorporated_by_reference` / `not_applicable` / `reserved` per item.
 
-**Status**: Phase 5 complete. Eval set passes all bars with zero LLM cost. Awaiting Zeabur deploy (Phase 7).
+**Status**: shipped. Eval set passes all bars with zero LLM cost both locally and against the live deployment.
 
-**Live URL**: _(pending Phase 7)_
+**Live URL**: <https://sec-10k.zeabur.app> ([`/healthz`](https://sec-10k.zeabur.app/healthz) · [HTML form](https://sec-10k.zeabur.app/))
 
 ---
 
@@ -111,14 +111,16 @@ Phase 5 confirmed the design works: AAPL FY 1996 Item 14 was correctly *located*
 
 ## Eval results
 
-10 hand-curated fixtures; report at [`eval/results/eval-20260430-141249.md`](./eval/results/eval-20260430-141249.md).
+10 hand-curated fixtures. Latest live-deploy report: [`eval/results/eval-20260430-145456.md`](./eval/results/eval-20260430-145456.md). Local-baseline report (faster, cache-warm): [`eval/results/eval-20260430-141249.md`](./eval/results/eval-20260430-141249.md).
 
-| Pass-bar check | Threshold | Result |
-|---|---|---|
-| `items_recall` | ≥ 0.90 | **1.000** |
-| `status_correctness` | ≥ 0.85 | **1.000** (on 2 fixtures with overrides) |
-| p95 latency on `modern_clean` | ≤ 30 s | **1114 ms** |
-| Total LLM cost | — | **$0.00** |
+| Pass-bar check | Threshold | Local (cache-warm) | Live (Zeabur, cold) |
+|---|---|---|---|
+| `items_recall` | ≥ 0.90 | **1.000** | **1.000** |
+| `status_correctness` | ≥ 0.85 | **1.000** (n=2 with overrides) | **1.000** (n=2) |
+| p95 latency on `modern_clean` | ≤ 30 s | **1114 ms** | **4821 ms** |
+| Total LLM cost | — | **$0.00** | **$0.00** |
+
+The live numbers are slower because the Zeabur container starts with an empty fetcher cache (warms over re-runs) and the SEC fetch hops the public internet rather than localhost. Pass bar still ~6× under threshold.
 
 Per-category coverage (six of eight categories from `spec.md` §5.1):
 

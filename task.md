@@ -88,13 +88,15 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 ## Phase 7 — Zeabur deploy  (≈ 15 min)
 
-- [ ] `Dockerfile` — slim Python + lxml + dependencies; volume mount for `cache/`
-- [ ] `zeabur.json` — health check, env vars
-- [ ] Push to GitHub; connect Zeabur; set env vars
-- [ ] Live URL allocated; `/healthz` returning 200; outbound to `data.sec.gov` succeeds
-- [ ] Run `eval/run_eval.py` against live URL; commit final report
-- [ ] Live URL added to README
-- [ ] **Commit**: `Phase 7: Zeabur deployment + live eval`
+- [x] `Dockerfile` — `python:3.12-slim` + ca-certificates + project; lxml manylinux wheels (no build deps); non-root `app` user; honours `$PORT`; `CACHE_DIR=/app/cache`
+- [x] `zeabur.json` — dockerfile build, port 8000, healthcheck `/healthz`, env vars (`SEC_CONTACT_EMAIL` required, `ANTHROPIC_API_KEY` optional)
+- [x] `.dockerignore` — excludes everything not needed at runtime (.git, .venv, eval/results, cache, tests, prompts, project docs)
+- [x] Pushed to public GitHub: <https://github.com/s8w1e2ep/sec-10k-extractor>
+- [x] Zeabur connected; `SEC_CONTACT_EMAIL` set; live URL: <https://sec-10k.zeabur.app>
+- [x] `/healthz` returning `{"status":"ok"}`; AAPL FY 2025 smoke against live URL returns 23/23 items via TOC anchor
+- [x] Full eval against live URL: 10/10 fixtures, agg_recall=1.000, agg_status=1.000, p95 modern_clean=4821 ms (vs local 1114 ms — cold cache + public-internet SEC hop). Report: `eval/results/eval-20260430-145456.md`
+- [x] Live URL added to README header + Eval results table now shows local vs live side by side
+- [x] **Commit**: `Phase 7: Zeabur deployment + live eval`
 
 ## Phase 8 — Post-deploy polish (catch-all)
 
