@@ -33,3 +33,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Claude Code (settings, local skills, etc. — local-machine state)
+.claude/
