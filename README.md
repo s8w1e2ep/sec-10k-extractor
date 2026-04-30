@@ -32,12 +32,6 @@ curl -X POST http://localhost:8000/extract \
 
 Response shape and full I/O contract: [`spec.md` §4.3](./spec.md).
 
-**Form gating**: this service handles 10-K only. The 10-K family (`10-KSB`, `10-K405`, `10-KT` — historical small-business and transition-period variants) is accepted because they share the same item catalog. Amendments (`10-K/A`, `10-KSB/A`, etc.) and other form types (`10-Q`, `8-K`, `20-F`, `40-F`, …) return HTTP 400:
-
-```json
-{"error": "Unsupported form: 10-K/A. This service supports 10-K only.", "form": "10-K/A", "supported_forms": "..."}
-```
-
 ```bash
 # Run the eval against a running server
 .venv/bin/python eval/run_eval.py http://localhost:8000
@@ -58,6 +52,124 @@ Optional (set either one, not both — OAuth token is preferred when both are pr
 Either one enables the two LLM-backed fallbacks (status resolver + locator fallback, see Architecture below). Without a credential the pipeline runs rules-only and any unresolved validator warnings are surfaced honestly.
 
 Health check: `GET /healthz`. Cache directory: `/app/cache` (gitignored; volume-mountable).
+
+---
+
+## API reference
+
+### Endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/extract` | Extract structured JSON from a 10-K. Body specifies the filing. |
+| `GET` | `/extract/{cik}/{accession}` | Same as POST, with the inputs in the URL. Convenience for `curl` / browser. |
+| `GET` | `/healthz` | Liveness probe. Returns `{"status":"ok"}`. |
+| `GET` | `/` | Minimal HTML form for grader-facing manual testing. |
+
+### `POST /extract` request body
+
+Pydantic-validated. Provide **either** `(cik, accession_number)` **or** `file_url`, never both.
+
+```jsonc
+{
+  "cik": "320193",                        // any digit string; auto-padded to 10 digits
+  "accession_number": "0000320193-25-000079" // 18-digit form or dashed; both accepted
+}
+```
+
+```jsonc
+{
+  // Alternative: a direct EDGAR Archives URL. Useful for pre-2002 plain-text filings
+  // where the (cik, accession) lookup would still work but the URL skips the Submissions hop.
+  "file_url": "https://www.sec.gov/Archives/edgar/data/320193/0000320193-96-000023.txt"
+}
+```
+
+### Success response (HTTP 200)
+
+Full I/O contract: [`spec.md` §4.3](./spec.md). Shortened example:
+
+```jsonc
+{
+  "filing": {
+    "cik": "0000320193",
+    "accession_number": "0000320193-25-000079",
+    "form": "10-K",
+    "filing_date": "2025-10-31",
+    "period_of_report": "2025-09-27",
+    "primary_document_url": "https://www.sec.gov/Archives/edgar/data/320193/.../aapl-20250927.htm",
+    "company_name": "Apple Inc."
+  },
+  "items": [
+    {
+      "part": "I",
+      "item_number": "1",
+      "item_title": "Business",
+      "content_text": "Apple Inc. designs, manufactures...",
+      "char_range": { "start": 12, "end": 56789 },   // offsets into the normalized text
+      "status": "extracted",                          // extracted | incorporated_by_reference | not_applicable | reserved
+      "resolved_by": "toc"                            // toc | heading | llm
+    }
+    // … 22 more items …
+  ],
+  "stats": {
+    "items_total": 23,
+    "items_extracted": 13,
+    "items_incorporated_by_reference": 5,
+    "items_not_applicable": 4,
+    "items_reserved": 1,
+    "items_missing": 0,
+    "strategies":  { "toc": 23, "heading": 0, "llm": 0 },
+    "duration_ms": 1540,
+    "fetch_ms": 169,
+    "format": "html_modern",                          // html_modern | html_legacy | plain_text
+    "llm_calls": 0,
+    "llm_input_tokens": 0,
+    "llm_output_tokens": 0,
+    "estimated_cost_usd": 0.0
+  },
+  "warnings": [
+    // self-verification signals; non-fatal. Empty array is the happy path.
+    // See "Self-verification" section below for the full code list.
+  ]
+}
+```
+
+### Error responses
+
+Every error has a structured JSON body. We never return bare 500s on **expected** failure modes.
+
+| HTTP | Code path | Body shape |
+|---|---|---|
+| **400** | Malformed CIK / accession (caught by `_normalize_*`); unparseable `file_url`; outbound URL not on `*.sec.gov` allowlist | `{"detail": "Invalid CIK: 'abc'"}` |
+| **400** | Non-10-K form (10-K/A amendment, 10-Q, 20-F, 8-K, …) — the form gate | `{"error": "Unsupported form: 10-K/A. This service supports 10-K only.", "form": "10-K/A", "supported_forms": "10-K (and historical 10-K family: 10-KSB, 10-K405, 10-KT). Amendments (/A suffix) are not supported."}` |
+| **404** | CIK well-formed but doesn't exist on SEC; or CIK exists but accession not in its filings; or the document URL points to a non-existent file | `{"error": "CIK 9999999999 not found at SEC Submissions API", "what": "CIK 9999999999", "where": "SEC Submissions API"}` |
+| **413** | Raw filing exceeds the 30 MB cap (rejected before BeautifulSoup is invoked, to protect the single-worker server from memory exhaustion) | `{"error": "Filing exceeds size limit: 35.2 MB > 30.0 MB", "size_bytes": 36909875, "limit_bytes": 31457280}` |
+| **422** | Pydantic schema rejection: empty body, neither input form provided, or both forms provided at once | `{"detail": [{"type":"value_error", "msg":"Provide either (cik, accession_number) or file_url", ...}]}` |
+| **502** | SEC EDGAR returned a 5xx that we couldn't recover from across the fetcher's 4 retries; or any other transient upstream issue | `{"error": "Upstream SEC Submissions API failed (status=503)", "upstream": "SEC Submissions API", "upstream_status": 503}` |
+| **504** | The request exceeded the 90-second total timeout (cold cache + slow SEC + 1 LLM call should still fit comfortably; 504 means something unusual happened) | `{"detail": "Extraction exceeded 90s timeout"}` |
+
+The 404 body's `what` field tells you exactly which input is wrong:
+
+```jsonc
+// CIK doesn't exist (fix the CIK):
+{"error": "CIK 9999999999 not found at SEC Submissions API",
+ "what": "CIK 9999999999", "where": "SEC Submissions API"}
+
+// CIK exists but accession not found (fix the accession, CIK is fine):
+{"error": "Accession 0000320193-99-999999 for CIK 0000320193 not found at SEC Submissions API",
+ "what": "Accession 0000320193-99-999999 for CIK 0000320193", "where": "SEC Submissions API"}
+```
+
+### Hard limits and timeouts
+
+| Constraint | Value | Where |
+|---|---|---|
+| Outbound request rate to SEC | 10 req/s | `extractor/fetcher.py` (in-process token bucket; that's why the server runs single-worker) |
+| Max raw filing size | 30 MB | `extractor/pipeline.py:MAX_RAW_HTML_BYTES` |
+| Max LLM call input | 50 KB | `extractor/llm_client.py:MAX_INPUT_CHARS` |
+| Max LLM calls per request | 1 | `extractor/pipeline.py` (Layer 2 wins over Layer 1 if both want to fire) |
+| Total request timeout | 90 s | `server/main.py` |
 
 ---
 
