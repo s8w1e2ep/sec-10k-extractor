@@ -882,4 +882,80 @@ probably C (real auth) — but that's a different ticket.
 
 ---
 
+## 2026-05-01 — Phase 12: legacy URL fallback when `primaryDocument` is empty
+
+User reported: hitting the deployed Zeabur instance with AAPL FY1996
+(CIK 320193 / accession 0000320193-96-000023) via the **cik+accession**
+path returned all 14 items as `items_missing`, while the eval set
+showed the same filing extracting cleanly.
+
+### Root cause
+
+The eval fixture for AAPL 1996 has a `file_url` override, so
+`run_eval.py` and `tests/smoke_aapl_1996.py` both took the
+`resolve_by_file_url` path. The cik+accession path was never
+exercised against a pre-2001 filing.
+
+`resolve_by_cik_accession` reads `primaryDocument` from the
+Submissions API response and builds:
+
+```
+https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_no_dashes}/{primary_doc}
+```
+
+For AAPL 1996, `primaryDocument` is the empty string. The constructed
+URL becomes `.../000032019396000023/`, which SEC serves as an HTML
+**directory listing** of the accession folder. Format detector calls
+this `html_legacy`, the locator finds zero items, all 14 required
+items end up in `items_missing`. No exception, no warning — just a
+silent zero-coverage response.
+
+### Why the eval didn't catch it
+
+Look at the categories in `eval/fixtures/filings.jsonl`: every
+fixture except AAPL 1996 is post-2001 and has `primaryDocument`
+populated. The 1996 fixture has `file_url` set specifically *because*
+old filings need the legacy URL. The eval set covered the long-tail
+filing but skipped the long-tail *resolver path*.
+
+Lesson: if a fixture comes with an input override, write a second
+fixture (or assertion) that tests the path *without* the override.
+The override exists for a reason; the bug is wherever that reason
+lives.
+
+### Fix
+
+`resolver.py:resolve_by_cik_accession` — when `primaryDocument` is
+empty, fall back to the canonical pre-2001 URL pattern:
+
+```
+https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession_dashed}.txt
+```
+
+This is the same single-.txt the eval's `file_url` override pointed
+at. `normalize_plain_text` already handles the SEC pseudo-XML wrapper
+inside it. After the fix, `extract_filing(cik='320193',
+accession_number='0000320193-96-000023')` matches the file_url path:
+14 items located, 0 missing, format `plain_text`.
+
+### Tests
+
+- `test_resolver_uses_legacy_txt_url_when_primarydocument_empty` —
+  resolver falls back when `primaryDocument == ""`.
+- `test_resolver_uses_per_accession_path_when_primarydocument_present` —
+  guards against the fallback accidentally firing on modern filings.
+
+140/140 tests passing.
+
+### What this didn't fix
+
+`resolve_by_cik_accession` still trusts `primaryDocument` blindly when
+it's set. If the Submissions API ever returns a `primaryDocument`
+that 404s (broken metadata, retracted filing), we'd surface a
+`FilingNotFoundError`. That's the right behavior — the silent
+zero-coverage failure mode only happens when `primaryDocument` is
+empty, which is now handled.
+
+---
+
 _Phase 6 onward will append entries here as issues surface._

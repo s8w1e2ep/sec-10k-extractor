@@ -100,10 +100,22 @@ async def resolve_by_cik_accession(
 
     accession_no_dashes = accession_dashed.replace("-", "")
     cik_int = int(cik_padded)
-    primary_url = (
-        f"https://www.sec.gov/Archives/edgar/data/"
-        f"{cik_int}/{accession_no_dashes}/{primary_doc}"
-    )
+    if primary_doc:
+        primary_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik_int}/{accession_no_dashes}/{primary_doc}"
+        )
+    else:
+        # Pre-~2001 filings have an empty `primaryDocument` field in the
+        # Submissions API. SEC stored the full submission as a single
+        # accession-level .txt file (the SEC pseudo-XML wrapper format
+        # that `normalize_plain_text` already handles). Without this
+        # fallback we'd build a URL ending in `/` and get back the
+        # directory-listing HTML, which the locator can't parse.
+        primary_url = (
+            f"https://www.sec.gov/Archives/edgar/data/"
+            f"{cik_int}/{accession_dashed}.txt"
+        )
 
     return FilingMetadata(
         cik=cik_padded,

@@ -224,3 +224,85 @@ def test_server_422_for_conflicting_inputs():
         },
     )
     assert r.status_code == 422
+
+
+# ---------- legacy URL fallback for pre-2001 Submissions API rows -----------
+
+
+@pytest.mark.asyncio
+async def test_resolver_uses_legacy_txt_url_when_primarydocument_empty(monkeypatch):
+    """Pre-~2001 filings have an empty `primaryDocument` field in the
+    Submissions API. Without a fallback, the resolver builds a URL
+    ending in `/` (the accession-folder index) and SEC serves a
+    directory-listing HTML — locator finds zero items, every required
+    item shows up in `items_missing`. The fix: when `primaryDocument`
+    is empty, build the legacy single-.txt URL the SEC stored these
+    submissions at. Reproduced live with AAPL FY1996
+    (CIK 320193 / 0000320193-96-000023)."""
+    import json as _json
+
+    from extractor import resolver
+
+    canned = {
+        "name": "Old Co",
+        "filings": {
+            "recent": {
+                "accessionNumber": ["0000123456-99-000001"],
+                "form": ["10-K"],
+                "filingDate": ["1999-12-31"],
+                "reportDate": ["1999-09-30"],
+                "primaryDocument": [""],
+                "primaryDocDescription": [""],
+            },
+            "files": [],
+        },
+    }
+
+    async def fake_fetch(url, **_):
+        assert "submissions" in url, f"unexpected fetch: {url}"
+        return _json.dumps(canned).encode()
+
+    monkeypatch.setattr(resolver, "fetch", fake_fetch)
+
+    meta = await resolver.resolve_by_cik_accession("123456", "0000123456-99-000001")
+    assert meta.primary_document_url == (
+        "https://www.sec.gov/Archives/edgar/data/123456/0000123456-99-000001.txt"
+    )
+    assert not meta.primary_document_url.endswith("/")
+
+
+@pytest.mark.asyncio
+async def test_resolver_uses_per_accession_path_when_primarydocument_present(monkeypatch):
+    """Modern (~2001+) filings: `primaryDocument` is the actual
+    filename. The URL goes through the per-accession folder. Guards
+    against the legacy-fallback fix accidentally triggering here."""
+    import json as _json
+
+    from extractor import resolver
+
+    canned = {
+        "name": "Modern Co",
+        "filings": {
+            "recent": {
+                "accessionNumber": ["0000320193-25-000079"],
+                "form": ["10-K"],
+                "filingDate": ["2025-10-31"],
+                "reportDate": ["2025-09-27"],
+                "primaryDocument": ["aapl-20250927.htm"],
+                "primaryDocDescription": ["10-K"],
+            },
+            "files": [],
+        },
+    }
+
+    async def fake_fetch(url, **_):
+        assert "submissions" in url, f"unexpected fetch: {url}"
+        return _json.dumps(canned).encode()
+
+    monkeypatch.setattr(resolver, "fetch", fake_fetch)
+
+    meta = await resolver.resolve_by_cik_accession("320193", "0000320193-25-000079")
+    assert meta.primary_document_url == (
+        "https://www.sec.gov/Archives/edgar/data/320193/"
+        "000032019325000079/aapl-20250927.htm"
+    )
