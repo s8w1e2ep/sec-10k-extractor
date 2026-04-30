@@ -162,7 +162,7 @@ A separate `items_missing` counter (NOT a status) tracks items that the locator 
 5. Item locator   — multi-strategy:
       A. TOC anchors  (most reliable on modern filings)
       B. Heading regex (\bItem\s+(\d+[A-Z]?)\b near line start, sequential)
-      C. LLM fallback (only on residuals, max once per request)
+      C. LLM fallback (only on residuals; shared per-request budget of MAX_LLM_CALLS_PER_REQUEST = 3 across Layer 1 + Layer 2)
 6. Status detect  — per-item textual classifier (rules-only, no LLM)
 7. Validator      — order monotonicity, char_range non-overlap, canonical title match,
                     Item 8 ↔ XBRL Company Facts cross-check

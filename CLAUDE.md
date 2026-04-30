@@ -11,7 +11,7 @@ A submission for **Task 3** of an AI Coding Test: a pipeline that takes a 10-K f
 - 10-Ks have a fixed item catalog (23 items post-2023) but enormously varied rendering: modern inline-XBRL HTML, legacy HTML, pre-2002 plain text, 10-K/A amendments. The system is designed around handling the **long tail honestly**, not just the head.
 - `status` is a **textual property** the filer chose to write inside an otherwise-present item, not a structural one. Status detection runs **after** locating, on the located content. An incorporated-by-reference Item 10 is still a *located* Item 10.
 - `char_range` is offsets into our **normalized plain text**, NOT raw HTML. The normalizer is the single source of truth for offsets; any change to it invalidates char-range golden tests on purpose.
-- This is a **cost-disciplined system**. Rules first. The LLM exists for the long tail, capped at 1 call per request. A clean modern filing should cost $0 in LLM.
+- This is a **cost-disciplined system**. Rules first. The LLM exists for the long tail, capped at 3 calls per request (shared across Layer 1 + Layer 2). A clean modern filing should cost $0 in LLM.
 - "Verify yourself without public ground truth" is the central engineering challenge. We use cross-strategy agreement, char-range continuity, item-number monotonicity, and XBRL Company Facts as independent signals. Disagreements surface as `warnings`, not silent corrections.
 
 ## Layout
@@ -56,7 +56,7 @@ Note the two `prompts/` directories are different on purpose:
 
 ## Conventions
 
-- **Rules-first locator**, LLM as fenced last resort. Order: TOC anchor → heading regex → LLM fallback. The LLM is capped at 1 call per request, 50 KB input, only fires when residual gaps > 5 KB exist.
+- **Rules-first locator**, LLM as fenced last resort. Order: TOC anchor → heading regex → LLM fallback. The LLM is capped at `MAX_LLM_CALLS_PER_REQUEST = 3` calls per request (`extractor/llm_client.py`), 50 KB input per call. Layer 2 (locator fallback) fires when any required canonical item is missing after rules; Layer 1 (status resolver) fires when the validator flagged `title_mismatch`. Both layers share the same budget — a clean modern filing fires neither.
 - **Status detector is rules-only.** No LLM. The patterns (`incorporated by reference`, `not applicable`, `reserved`) are tight.
 - **Single source of truth for offsets** is `extractor/normalizer.py`. Char-range tests assert exact offsets on a checked-in golden filing. Changing the normalizer changes offsets — that's a deliberate snapshot bump, not a free move.
 - **`items_missing` is a counter on `stats`, not a `status` value**. `status` describes what the filer wrote; `items_missing` describes what we couldn't find. Don't conflate them — that hides our errors.
@@ -64,6 +64,8 @@ Note the two `prompts/` directories are different on purpose:
 - **Outbound allowlist** at the fetcher level: only `*.sec.gov`. Even if anything else slips into a URL, the fetcher rejects it.
 - **SEC etiquette**: User-Agent must contain a contact email (`SEC_CONTACT_EMAIL` env). 10 req/sec is the hard ceiling; we use a single-worker token bucket. Without UA, SEC returns 403.
 - **Cache by URL hash** at `cache/<sha256>.bin`. Survives reruns, drops 99% of eval cost on the second run. Gitignored.
+- **Cost shield, not security boundary.** Per-IP rate limit (`server/main.py:rate_limit_middleware`, default 10 req/min burst 10, env: `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_BURST`) and daily LLM cost ceiling (`extractor/llm_client.py:daily_budget_remaining`, default $5/day, env: `DAILY_LLM_BUDGET_USD`) both live in-process. They die on container restart and don't span workers — that's fine for the single-worker design but document it as a cost shield, not auth. `/healthz`, `/`, `/docs`, `/redoc`, `/openapi.json` are rate-limit-exempt.
+- **Structured JSON logging** to stderr via `extractor/logging_config.py`. One line per event, request-scoped `request_id` via `ContextVar`. The middleware emits `http.request` with `client_ip` (read from `X-Forwarded-For` first, since Zeabur is behind a reverse proxy). Pipeline emits `pipeline.start` / `pipeline.done`; fetcher emits `fetcher.cache_hit` / `cache_miss` / `fetched` / `retry`.
 - **No database.** File cache only. v1 doesn't need state beyond the filing cache.
 - **Self-contained `extractor/` module.** No FastAPI imports inside `extractor/`. The pipeline is callable from a CLI or a notebook the same way.
 - **Commit hygiene.** Small, intent-revealing commits matching `task.md` phases. Don't squash; don't force-push. The grader reads commit history.
@@ -75,8 +77,9 @@ Note the two `prompts/` directories are different on purpose:
 - Don't add LLM calls to the status detector. The patterns are textual, tight, and rules cover them at $0.
 - Don't treat "items_missing" as a `status` value. It's a counter; conflating them hides our errors.
 - Don't auto-sample 100 random filings into the eval set. Twelve deliberately-stressed fixtures beat a hundred random clean ones.
-- Don't lift the 1-call/request LLM cap to "improve recall on hard cases" without a measured cost/benefit number. The cap is the cost discipline.
-- Don't multi-worker the server. The rate limiter is in-process; multi-worker silently bursts past 10 req/s. Document this; don't fix it without sharing the bucket.
+- Don't lift `MAX_LLM_CALLS_PER_REQUEST` further to "improve recall on hard cases" without a measured cost/benefit number. The cap is the cost discipline; the current 3 already gives both layers headroom plus one retry slot.
+- Don't multi-worker the server. **Both** rate limiters (the SEC outbound 10 req/s bucket *and* the per-IP ingress bucket) are in-process; multi-worker silently bursts past both. The daily-LLM-cost counter has the same problem. Document this; don't fix it without sharing state via Redis or similar.
+- Don't pretend the per-IP rate limit or daily LLM budget are auth. They're cost shields. Anyone willing to rotate IPs or wait for tomorrow's budget can still hit the API. If you need real auth, that's a separate ticket (option C in `prompts/04-cost-shield.md` — currently de-scoped).
 - Don't auto-merge strategy disagreements. They're a signal of a bad filing or a bad rule, not noise.
 - Don't put 10 MB filings into `tests/fixtures/`. Keep golden fixtures small; cache the rest under `cache/` (gitignored).
 - Don't write to `.github/workflows/` from this repo's CI — there's no overlap with Task 1; this repo only ships its own service.

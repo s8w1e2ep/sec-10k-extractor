@@ -725,4 +725,161 @@ specific input".
 
 ---
 
+## 2026-05-01 — Phase 10: LLM cap raised to 3 + doc/code reconciliation
+
+User asked "in what cases is the LLM triggered?" — answering it surfaced
+two issues worth recording.
+
+### Doc claim that wasn't in code
+
+`CLAUDE.md` (and `plan.md`, `prompts/02-strategy-ladder.md`) had stated
+that Layer 2 only fires when **residual gaps > 5 KB exist**. Reading the
+actual gate at `pipeline.py:198`:
+
+```python
+if missing_now and is_configured():
+```
+
+There is no gap-size check — only "any required item is missing". The
+5 KB filter was an earlier design intent that never got implemented; the
+docs froze the intent rather than the reality. Fixed by aligning the docs
+to the code (`CLAUDE.md`, `plan.md`, `README.md`). `prompts/` and the older
+`decisions.md` entries are left as-is — those are historical writeups and
+should reflect the *intent at the time*, not be backdated.
+
+Rule of thumb going forward: anything in `CLAUDE.md` describing pipeline
+behavior gets verified against the code on every revisit.
+
+### Cap raised from 1 → 3 (`MAX_LLM_CALLS_PER_REQUEST`)
+
+Promoted the cap from a magic number scattered across two gates
+(`if missing_now and is_configured()` for Layer 2, `if usage.calls == 0
+and is_configured()` for Layer 1) into a single named constant in
+`llm_client.py`. Both gates now check
+`usage.calls < MAX_LLM_CALLS_PER_REQUEST` against the shared `LLMUsage`
+counter.
+
+Practical effect today: previously the two layers were mutually
+exclusive (Layer 2 wins on conflict; Layer 1 only fires if Layer 2
+didn't). Now both can fire in the same request — useful for filings
+that *both* miss a required item *and* have a title_mismatch on a
+different one. The realistic ceiling is still 2 calls because each
+layer makes one call internally; the headroom to 3 leaves one slot for
+a future Layer 2 retry / chunked pass without a re-architect.
+
+Cost ceiling: with Haiku 4.5 at $1 in / $5 out per MTok and 50 KB cap
+per call (~12.5K input tokens), absolute worst case per request is
+~3 × ($0.0125 + small output) ≈ $0.05. The eval set still costs $0
+because no fixture trips either gate.
+
+### What this didn't fix (resolved in Phase 11 below)
+
+Public `/extract` was still completely unauthenticated at the close of
+Phase 10. Three calls × ~$0.05 × N concurrent abusive callers was a real
+cost-DoS surface on the deployed Zeabur instance. The follow-up
+discussion landed on a six-option menu (rate limit, daily ceiling, API
+key, result cache, CDN, log-based forensics); the user picked A + B + F,
+implemented in Phase 11.
+
+## 2026-05-01 — Phase 11: cost shields (A + B + F)
+
+Six-option abuse-prevention menu narrowed to three by the user
+("做快一點，不要浪費我時間"). C/D/E explicitly de-scoped. See
+[`prompts/04-cost-shield.md`](prompts/04-cost-shield.md) for the
+conversation; this entry covers execution-level details.
+
+### A — Per-IP rate limit (`server/main.py`)
+
+`_SyncTokenBucket` keyed by client IP. Defaults: 10 req/min burst 10,
+env-tunable via `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_BURST`. Returns
+`429 {"error": "rate limit exceeded", "limit_per_minute": 10,
+"retry_after_s": 1}` with `Retry-After: 1`.
+
+**Identity** — read `X-Forwarded-For` first, fall back to socket peer.
+Zeabur is behind a reverse proxy, so the socket peer is always the
+proxy IP — without XFF, every user shares one bucket. The XFF parsing
+takes the first comma-separated entry (the original client) and
+ignores intermediate proxies. Tested explicitly in
+`test_rate_limit_separates_by_xforwarded_for` and
+`test_http_request_log_strips_xff_chain`.
+
+**Exemptions** — `/healthz`, `/`, `/docs`, `/redoc`, `/openapi.json`.
+Health probes from Zeabur and grader bookmarks must not be
+rate-limited; otherwise a flapping monitor turns into a 429 storm.
+
+**Middleware ordering** — registered *before* `request_logging_middleware`
+in the source, which means it's the *inner* middleware. The outer
+logging middleware still sees the 429 response and logs it. This
+matters: silent rate limiting would break F (forensic logging).
+
+### B — Daily LLM cost ceiling (`extractor/llm_client.py`)
+
+`_daily_state` dict tracks `(date, spent_usd)`. Updated atomically
+inside `LLMUsage.add()` so every successful LLM call lands regardless
+of which layer made it. `daily_budget_remaining()` rolls the date on
+read, so a stale yesterday-state automatically resets at the next
+check after midnight UTC.
+
+Pipeline gates check `daily_budget_remaining() > 0` before invoking
+either LLM layer. On exhaustion the request still returns 200 with
+rules-only coverage and a `llm_skipped_daily_budget_exhausted`
+warning. **Degradation, not rejection** — the user gets data, just
+without the LLM polish. Costs $0 instead of crashing.
+
+Default $5/day, configurable via `DAILY_LLM_BUDGET_USD` env. At Haiku
+4.5 prices that's ~250-1000 LLM calls before the ceiling trips, well
+beyond legitimate usage; an attacker would need to burn through that
+volume in a day to deny service.
+
+### F — `client_ip` in structured log
+
+One-line change to the existing `request_logging_middleware`. Same
+`_client_ip()` helper the rate limiter uses, so logs and limits agree
+on identity. Sourced from XFF first.
+
+This is the cheapest piece of the bundle but the highest-leverage:
+without it, A and B are blind. With it, `grep client_ip=x.x.x.x` over
+the structured logs answers "who's hitting us, with what pattern, how
+often, on which paths".
+
+### What got explicitly *not* built
+
+- **C: API key gate** — declined. Adds setup friction during the
+  evaluation; not needed when A is enough to make automated abuse
+  unprofitable.
+- **D: Result cache** — declined. The fetcher already caches raw
+  bytes; the parse + locate path is 1-2s on modern filings. Adding a
+  result-cache layer means owning a normalizer-version invariant for
+  marginal gain over rules being already cheap.
+- **E: CDN-level rate limit** — declined as out-of-scope for the
+  coding test. Right answer for production; wrong altitude for now.
+
+### Honest disclosure of limits
+
+All three (A, B, F) live in process memory. They die on container
+restart and don't span workers. Documented in code comments,
+`CLAUDE.md` ("Cost shield, not security boundary"), and the README
+abuse-prevention section.
+
+If the deployment scales beyond single-worker uvicorn, all three need
+shared state (Redis bucket for A, atomic counter for B, structured
+log shipping for F). At that point you should also add E (CDN) and
+probably C (real auth) — but that's a different ticket.
+
+### Test coverage
+
+11 new tests in `tests/test_abuse_prevention.py`:
+
+- A: 11th burst returns 429; XFF separates buckets; /healthz exempt;
+  socket-peer fallback when no XFF.
+- B: `LLMUsage.add()` updates daily counter; date rollover resets;
+  env override; pipeline skips Layer 2 with warning when exhausted
+  (asserted by monkeypatching `call_json` to `boom`).
+- F: `client_ip` present on http.request log; XFF chain stripped to
+  first entry; 429 responses still logged with `client_ip`.
+
+138/138 total tests passing.
+
+---
+
 _Phase 6 onward will append entries here as issues surface._

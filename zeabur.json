@@ -25,7 +25,19 @@
       "required": false
     },
     "ANTHROPIC_API_KEY": {
-      "description": "Optional alternative to CLAUDE_CODE_OAUTH_TOKEN. Enables two LLM-backed fallbacks: (1) status resolver — fires when validator emits title_mismatch on extracted items, asks Claude Haiku 4.5 to confirm/correct status (catches era-renames like pre-2003 Item 14, unusual IBR phrasings); (2) locator fallback — fires when required items are missing, asks the LLM to find them in the first 50KB of the doc. Capped at 1 call/request, ≤50KB input. Without either credential the pipeline runs rules-only and leaves the warnings unresolved.",
+      "description": "Optional alternative to CLAUDE_CODE_OAUTH_TOKEN. Enables two LLM-backed fallbacks: (1) status resolver — fires when validator emits title_mismatch on extracted items, asks Claude Haiku 4.5 to confirm/correct status (catches era-renames like pre-2003 Item 14, unusual IBR phrasings); (2) locator fallback — fires when required items are missing, asks the LLM to find them in the first 50KB of the doc. Capped at MAX_LLM_CALLS_PER_REQUEST = 3 (shared budget across both layers; today each makes ≤ 1 call), ≤50KB input. Without either credential the pipeline runs rules-only and leaves the warnings unresolved.",
+      "required": false
+    },
+    "DAILY_LLM_BUDGET_USD": {
+      "description": "Optional. Process-wide daily ceiling for total LLM spend, in USD. Default $5. Resets on UTC date rollover. When exhausted, the LLM gates skip with a `llm_skipped_daily_budget_exhausted` warning and the request still returns 200 with rules-only coverage. Cost shield, not auth — counter lives in process memory and resets on container restart.",
+      "required": false
+    },
+    "RATE_LIMIT_PER_MIN": {
+      "description": "Optional. Per-IP request rate limit in requests-per-minute. Default 10. Identity is read from X-Forwarded-For (Zeabur is behind a reverse proxy). /healthz, /, /docs, /redoc, /openapi.json are exempt. In-process bucket — resets on container restart, doesn't span workers.",
+      "required": false
+    },
+    "RATE_LIMIT_BURST": {
+      "description": "Optional. Per-IP rate-limit burst capacity. Default 10. Should typically equal RATE_LIMIT_PER_MIN unless you want to allow short spikes.",
       "required": false
     }
   }

@@ -124,9 +124,9 @@ Three strategies, run in order; each returns a `list[ItemSpan]` (which may be pa
 
 **C. `llm_fallback`**
 
-- Triggered when items are missing after A and B AND the gap between the last located item and the next is > 5000 chars (i.e., there's content there but neither rule strategy claimed it).
-- Prompt: send the residual character range + the list of missing item numbers + their canonical titles. Ask Claude (Sonnet) to identify start offsets for the missing items.
-- Cap: max 1 LLM call per request, max 50 KB sent. Cost recorded.
+- Triggered when any *required* canonical item is missing after A and B AND a credential is configured. (The "gap > 5000 chars" filter discussed in earlier drafts was never implemented — the actual gate in `pipeline.py` is just `missing_now and is_configured() and usage.calls < MAX_LLM_CALLS_PER_REQUEST`.)
+- Prompt: send the first 50 KB of normalized text + the missing item numbers + their canonical titles. Ask Claude Haiku 4.5 to return start snippets for the missing items, which the caller resolves to offsets via `text.find()`.
+- Cap: shared per-request budget of `MAX_LLM_CALLS_PER_REQUEST = 3` calls, max 50 KB input per call. Cost recorded in `stats.llm_calls` / `estimated_cost_usd`.
 - If LLM returns nothing usable, items stay in `items_missing`.
 
 Strategies vote — if A and B disagree on item N's start by > 200 chars, the warning fires and A wins (TOC is more reliable on modern filings).
@@ -191,7 +191,7 @@ Pure stdlib + `httpx`. Reads `eval/fixtures/filings.jsonl`, posts each to `/extr
 
 | Decision | Alternative | Why |
 |---|---|---|
-| Rules-first; LLM as last resort, capped at 1 call | LLM-first or LLM-always | Cost discipline. A clean modern filing should cost $0 in LLM. The LLM exists to handle the long tail, not the head. |
+| Rules-first; LLM as last resort, capped at `MAX_LLM_CALLS_PER_REQUEST = 3` (shared budget across both LLM layers) | LLM-first or LLM-always | Cost discipline. A clean modern filing should cost $0 in LLM. The LLM exists to handle the long tail, not the head. |
 | `char_range` indexed against normalized text | Raw HTML offsets | Stability across reruns, usable by the grader without parsing HTML. The price: the grader needs the normalized text to verify; we expose it via response (or addressable URL). |
 | Status detector is rules-only | LLM-classified status | The patterns (`incorporated by reference`, `not applicable`, `reserved`) are extremely tight. LLM would add cost + latency for ~0 accuracy gain. |
 | Single-strategy winner per item, with disagreement → warning | Cross-strategy ensemble averaging | Boundaries are integer offsets; averaging is meaningless. Vote + warn is honest. |
@@ -208,7 +208,7 @@ Pure stdlib + `httpx`. Reads `eval/fixtures/filings.jsonl`, posts each to `/extr
 - **R1: Old filings break the parser.** Pre-2002 plain text is wildly varied; 80% recall is the v1 bar, 100% is wishful. Mitigation: dedicated `plain_text` branch in normalizer; eval set includes ≥ 1 plain-text fixture.
 - **R2: TOC anchors don't exist on legacy HTML.** Heading regex is the fallback; LLM is the safety net.
 - **R3: `incorporated_by_reference` false negatives.** A filer might phrase it as "see the Proxy Statement" without the literal "incorporated by reference" string. Mitigation: secondary pattern matching DEF 14A / proxy statement references combined with brevity.
-- **R4: LLM fallback runs away on cost.** Mitigation: hard cap of 1 call/request, max 50 KB input, recorded per-request, surfaced in response stats.
+- **R4: LLM fallback runs away on cost.** Mitigation: hard cap of `MAX_LLM_CALLS_PER_REQUEST = 3` calls/request (shared across Layer 1 + Layer 2), max 50 KB input per call, recorded per-request, surfaced in response stats. Plus a process-wide daily ceiling (`DAILY_LLM_BUDGET_USD`, default $5) that downgrades the request to rules-only with a warning when exhausted (`extractor/llm_client.py`). Plus per-IP rate limit on the public endpoint (10 req/min default, `server/main.py`). All three are in-process — fine for the single-worker design, would need shared state if scaled out.
 - **R5: SEC blocks our User-Agent.** They rate-limit by UA. Mitigation: contact email in UA per their guidance; back-off + retry.
 - **R6: 10-K/A amendments restate only some items.** Item set may be incomplete by design. Mitigation: validator warns on missing items but does NOT fail; README documents that 10-K/A is partial-by-design.
 - **R7: Item 1C / 9C absence on older filings.** 1C is FY 2023+, 9C is FY 2021+. Pre-cutoff filings legitimately don't have these. Mitigation: `expected_items_for_period` filters by filing date so eval doesn't ding them; details in `eval/fixtures/format_eras.md`.

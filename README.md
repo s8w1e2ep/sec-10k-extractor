@@ -2,7 +2,7 @@
 
 > Submission for **Task 3** of an AI Coding Test: SEC 10-K item-level structured extraction. Rules-first pipeline that takes a filing (by `CIK + accession_number` or `file_url`) and emits structured JSON across the canonical 10-K item set, distinguishing real content from `incorporated_by_reference` / `not_applicable` / `reserved` per item.
 
-**Status**: shipped. Eval set passes all bars; rules carry the head, LLM (Claude Haiku 4.5) handles the long tail at ≤ 1 call per request.
+**Status**: shipped. Eval set passes all bars; rules carry the head, LLM (Claude Haiku 4.5) handles the long tail at ≤ 3 calls per request (shared budget across both LLM layers).
 
 **Live URL**: <https://sec-10k.zeabur.app> ([`/healthz`](https://sec-10k.zeabur.app/healthz) · [HTML form](https://sec-10k.zeabur.app/))
 
@@ -168,7 +168,9 @@ The 404 body's `what` field tells you exactly which input is wrong:
 | Outbound request rate to SEC | 10 req/s | `extractor/fetcher.py` (in-process token bucket; that's why the server runs single-worker) |
 | Max raw filing size | 30 MB | `extractor/pipeline.py:MAX_RAW_HTML_BYTES` |
 | Max LLM call input | 50 KB | `extractor/llm_client.py:MAX_INPUT_CHARS` |
-| Max LLM calls per request | 1 | `extractor/pipeline.py` (Layer 2 wins over Layer 1 if both want to fire) |
+| Max LLM calls per request | 3 | `extractor/llm_client.py:MAX_LLM_CALLS_PER_REQUEST` (shared budget across Layer 1 + Layer 2; today each layer makes ≤ 1 call) |
+| Daily LLM cost ceiling | $5 (default) | `extractor/llm_client.py:DAILY_LLM_BUDGET_USD` env; on exhaustion the request still succeeds with rules-only coverage and a `llm_skipped_daily_budget_exhausted` warning |
+| Per-IP rate limit | 10 req/min, burst 10 | `server/main.py:rate_limit_middleware` (env: `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_BURST`); `/healthz`, `/`, `/docs`, `/redoc`, `/openapi.json` exempt |
 | Total request timeout | 90 s | `server/main.py` |
 
 ---
@@ -211,9 +213,17 @@ See [`plan.md` §1](./plan.md) for the diagram. Eight-stage pipeline:
 
 **LLM status resolver** (separate from the locator path): when `validator` emits `title_mismatch` on an `extracted` item, we ask the LLM to confirm or correct the status. Catches era-renames (pre-2003 Item 14 was today's Item 15 content) and unusual IBR phrasings (Berkshire-style "Except for the information set forth under the caption…") that pure rules miss. On the live eval this fires on 2 of 10 fixtures (BRK FY 2025, AAPL FY 1996) for a combined cost of **$0.0039**; the other 8 cost $0.
 
-**Per-request 1-call cap**: the locator fallback and the status resolver share one budget. If both want to fire, locator fallback wins (missing items > wrong status). Input is capped at 50 KB; cost lands in `stats.llm_calls` / `estimated_cost_usd`.
+**Per-request LLM budget**: `MAX_LLM_CALLS_PER_REQUEST = 3` calls, shared across the locator fallback and the status resolver. Layer 2 (locator fallback) fires first when required items are missing; Layer 1 (status resolver) fires afterwards if the validator flagged `title_mismatch` and budget remains. Input is capped at 50 KB per call; cost lands in `stats.llm_calls` / `estimated_cost_usd`. Today each layer makes at most one call, so the realistic ceiling is 2 — the headroom to 3 leaves a slot for a future Layer 2 retry / chunked pass.
 
 **Cost discipline**: the design contract (`spec.md` §1) is that "if a 1996 plain-text filing and a 2024 inline-XBRL filing both cost the same number of LLM tokens to parse, we have built the wrong system." A clean modern filing still costs $0; only the long-tail fixtures pay.
+
+**Abuse prevention** (cost shields, not auth — see [`prompts/04-cost-shield.md`](./prompts/04-cost-shield.md)):
+
+- **Per-IP rate limit** (`server/main.py:rate_limit_middleware`) — in-process token bucket keyed by `X-Forwarded-For` (Zeabur is behind a reverse proxy). Default 10 req/min burst 10, env-tunable. Returns `429 {"error":"rate limit exceeded"}` with `Retry-After: 1`. `/healthz`, `/`, `/docs`, `/redoc`, `/openapi.json` exempt so health probes don't flap.
+- **Daily LLM cost ceiling** (`extractor/llm_client.py:daily_budget_remaining`) — process-wide accumulator, default $5/day, UTC date rollover. When exhausted, both LLM gates skip with a `llm_skipped_daily_budget_exhausted` warning; the request still returns 200 with rules-only coverage.
+- **Forensic logging** — every request emits a structured JSON `http.request` line with `request_id`, `client_ip` (same source as the rate limiter), `status`, `duration_ms`. Pipeline emits `pipeline.start` / `pipeline.done`; fetcher emits `cache_hit` / `cache_miss` / `fetched` / `retry`. All three layers correlate via the contextvar-bound `request_id`.
+
+These are **cost shields, not security boundaries** — the buckets and counter live in process memory and reset on container restart. Anyone willing to rotate IPs or wait for tomorrow's budget can still hit the API. If real auth becomes necessary, see option C in `prompts/04-cost-shield.md` (currently de-scoped).
 
 ---
 

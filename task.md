@@ -11,8 +11,8 @@ Each phase ends in a **commit** with an intent-revealing message. The grader wil
 - [x] `git init` inside `sec-10k-extractor/`
 - [x] `.gitignore`: Python, `.env`, `cache/`, `eval/results/*.md` except a sample
 - [x] First commit: "scaffold spec/plan/task docs and CLAUDE.md"
-- [ ] Push this repo to GitHub as a public repo
-- [ ] `SEC_CONTACT_EMAIL`, `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) noted as required Zeabur env vars
+- [x] Push this repo to GitHub as a public repo (done in Phase 7: <https://github.com/s8w1e2ep/sec-10k-extractor>)
+- [x] `SEC_CONTACT_EMAIL`, `ANTHROPIC_API_KEY` (or `CLAUDE_CODE_OAUTH_TOKEN`) noted as required Zeabur env vars (done in Phase 7: `zeabur.json` declares them with required-flag and descriptions)
 
 ## Phase 1 — AAPL end-to-end, rules-only  (≈ 60 min)
 
@@ -63,7 +63,7 @@ Reframed from the original "LLM fallback locator" plan into **two layers** shari
 - [x] **Layer 2 — locator fallback**: when rules left required items unlocated, send first 50 KB + missing list to LLM, recover offsets via `text.find(snippet)`. Currently no eval fixture triggers it (rules at 100% recall); hook is wired and tested.
 - [x] `extractor/llm_client.py` — supports both `ANTHROPIC_API_KEY` (X-Api-Key) and `CLAUDE_CODE_OAUTH_TOKEN` (Bearer + `anthropic-beta: oauth-2025-04-20` + Claude Code identifier prefix on the system prompt). Live verified — first try got 401 because Agent advice ("send OAuth via x-api-key") was wrong; fix in commit `16663df`.
 - [x] `extractor/prompts/{status_resolver,locator_fallback}.md` — prompt templates with explicit era guidance (pre-2003 Item 14, pre-2011 Item 4, BRK-style IBR).
-- [x] Cost tracking: 1-call cap enforced in pipeline (Layer 2 wins on conflict); 50KB input cap inside the client; `llm_calls` / `estimated_cost_usd` in `stats`. Live eval cost: **$0.0039 across 10 fixtures** (2 LLM calls).
+- [x] Cost tracking: shared per-request budget enforced in pipeline (`MAX_LLM_CALLS_PER_REQUEST`, originally 1 — bumped to 3 in Phase 10); 50KB input cap inside the client; `llm_calls` / `estimated_cost_usd` in `stats`. Live eval cost: **$0.0039 across 10 fixtures** (2 LLM calls).
 - [x] `tests/test_llm_resolver.py` — 10 mocked tests; total now 75 unit tests passing.
 - [x] **Commit**: `Phase 4: LLM-backed status resolver + locator fallback` (`3fceb4f`); auth fix `16663df`.
 
@@ -110,7 +110,6 @@ This phase captures non-trivial work that surfaced after the original plan shipp
 - [x] **Phase 4 LLM resolvers built** (above). The 2 genuine title_mismatch warnings now drive a status correction instead of remaining unresolved.
 - [x] **`amendment` no longer needed** — Phase 9A added explicit form gating that rejects 10-K/A with HTTP 400. The "what if a 10-K/A comes in" case is now a contract, not a coverage gap.
 - [x] **`small_cap` covered** by Kura Sushi USA in Phase 9C (also tested the shared-anchor edge case it surfaced).
-- [ ] Item 14 / 15 SOX renumber: per-era titles in `CanonicalItem` (status is now correct via Phase 4 resolver; title is still cosmetic)
 
 ## Phase 9 — Production hardening (post-Phase-8 follow-on)
 
@@ -186,3 +185,24 @@ User asked: do we have防呆 for invalid CIK / accession?
 - [x] Side-by-side 404 example showing `what` field disambiguating CIK-not-found vs accession-not-found.
 - [x] Old form-gating snippet removed from Quick Start (now lives in error matrix).
 - [x] **Commit**: `README: add API reference + structured error response catalog` (`ca32d31`)
+
+## Phase 10 — LLM cap bump + doc reconciliation  (≈ 30 min)
+
+Triggered by user's diagnostic question "tests aren't using LLM — what triggers it?". Answering it surfaced a doc-vs-code drift.
+
+- [x] Audited the LLM trigger conditions; found `CLAUDE.md` and `plan.md` claimed Layer 2 only fires on residual gaps > 5 KB — the real gate at `pipeline.py:198` was just "any required item missing". Drift never caught earlier because no fixture ever tripped either gate.
+- [x] Promoted the 1-call cap to a named constant `MAX_LLM_CALLS_PER_REQUEST = 3` in `extractor/llm_client.py`. Both Layer 1 and Layer 2 gates now check `usage.calls < MAX_LLM_CALLS_PER_REQUEST` against the shared `LLMUsage` counter — both layers can fire in the same request.
+- [x] Synced docs to current behavior: `CLAUDE.md`, `README.md`, `plan.md`, `spec.md`, `task.md`, plus docstrings in `llm_client.py` / `llm_resolver.py` / `test_llm_resolver.py`. Old `prompts/02-strategy-ladder.md` left intact (historical writeup) with a forward-pointing footnote.
+- [x] New test `test_pipeline_allows_layer1_after_layer2_within_budget` — synthetic filing where both gates trip; asserts `usage.calls == 2`.
+- [x] Decisions journal entry. Rule of thumb added to `CLAUDE.md`: behavior claims in docs must be reconcilable to a grep.
+
+## Phase 11 — Cost shields (A + B + F)  (≈ 60 min)
+
+Public `/extract` was unauthenticated; with the cap raised to 3 the worst-case per-request cost is ~$0.05, which is a real cost-DoS surface. User picked A + B + F from a six-option menu (rate limit, daily ceiling, API key, result cache, CDN, log forensics) — C/D/E explicitly de-scoped.
+
+- [x] **A — per-IP rate limit** (`server/main.py:rate_limit_middleware`): in-process token bucket keyed by client IP. Default 10 req/min burst 10, env-tunable via `RATE_LIMIT_PER_MIN` / `RATE_LIMIT_BURST`. Reads `X-Forwarded-For` first (Zeabur is behind a reverse proxy). `/healthz`, `/`, `/docs`, `/redoc`, `/openapi.json` exempt. Returns 429 with `Retry-After: 1`.
+- [x] **B — daily LLM cost ceiling** (`extractor/llm_client.py`): process-wide accumulator updated atomically inside `LLMUsage.add()`. UTC date rollover resets on read. Default $5/day via `DAILY_LLM_BUDGET_USD`. Pipeline gates degrade to rules-only with a `llm_skipped_daily_budget_exhausted` warning when exhausted — request still returns 200.
+- [x] **F — `client_ip` in structured log**: one-line addition to `request_logging_middleware`, same `_client_ip()` helper as the rate limiter so logs and limits agree on identity. Even 429 responses get logged.
+- [x] 11 new tests in `tests/test_abuse_prevention.py` covering all three layers including XFF chain stripping, /healthz exemption, date rollover, and pipeline degradation. Total 138/138 passing.
+- [x] Synced docs: `CLAUDE.md` (cost-shield convention + don't-pretend-it's-auth note), `README.md` (limits table + abuse prevention section), `plan.md` (R4 mitigation), `zeabur.json` (3 new env vars), `decisions.md` (Phase 11 entry), `prompts/04-cost-shield.md` (the design conversation), `prompts/README.md` (4th file in the table), `prompts/02-strategy-ladder.md` (forward-pointing footnote).
+- [x] Honest disclosure baked into all three layers' comments: **cost shield, not security boundary**. State dies on restart, doesn't span workers.

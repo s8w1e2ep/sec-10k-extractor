@@ -20,6 +20,13 @@ This was the cost-discipline rule. The system was structured so that:
 - **LLM fallback** is fenced: max 1 call per request, 50 KB input, only
   fires when residual gaps > 5 KB exist after both rule strategies.
 
+> **Footnote, Phase 10**: this paragraph reflects the *original design
+> intent*. Two of those three numbers were never actually implemented:
+> the "5 KB residual gap" filter never made it into code (the real gate
+> is just "any required item missing"), and the per-request cap was
+> raised from 1 → 3 calls. See [`04-cost-shield.md`](./04-cost-shield.md)
+> for the conversation that surfaced and fixed both.
+
 The cost-discipline numbers (1 call / 50 KB / 5 KB threshold) were spec'd
 upfront in `plan.md` §2.6. The reasoning: if rules can't crack it, hand
 the LLM only the *residual* range — not the whole document — so the cost
