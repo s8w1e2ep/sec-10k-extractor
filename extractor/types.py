@@ -17,6 +17,7 @@ class CanonicalItem:
     aliases: tuple[str, ...] = ()
     valid_from_year: int | None = None
     valid_to_year: int | None = None
+    optional: bool = False  # Item 16 is "may, at their option" per Form 10-K instructions
 
 
 @dataclass

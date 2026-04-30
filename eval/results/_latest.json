@@ -1,0 +1,394 @@
+{
+  "timestamp": "20260430-141249",
+  "agg_recall": 1.0,
+  "agg_status_correctness": 1.0,
+  "p95_modern_clean_ms": 1114,
+  "total_cost_usd": 0.0,
+  "total_llm_calls": 0,
+  "n_fixtures": 10,
+  "n_errors": 0,
+  "pass": true,
+  "results": [
+    {
+      "label": "Apple Inc. \u2014 2025-10-31 (10-K)",
+      "category": [
+        "modern_clean",
+        "new_items_2023"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": 1.0,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 406,
+      "wall_ms": 434,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "MICROSOFT CORP \u2014 2025-07-30 (10-K)",
+      "category": [
+        "modern_clean",
+        "new_items_2023"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 1184,
+      "wall_ms": 1188,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "NVIDIA CORP \u2014 2026-02-25 (10-K)",
+      "category": [
+        "modern_clean",
+        "new_items_2023"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 342,
+      "wall_ms": 347,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 2,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 2: detected 'Table of Contents' vs canonical 'Properties' (score=47)",
+          "item": "2",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Properties",
+          "score": 47
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 7: detected 'Table of Contents' vs canonical 'Management's Discussion and Analysis of Financial Condition and Results of Opera' (score=54)",
+          "item": "7",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Management's Discussion and Analysis of Financial Condition and Results of Operations",
+          "score": 54
+        }
+      ]
+    },
+    {
+      "label": "Tesla, Inc. \u2014 2026-01-29 (10-K)",
+      "category": [
+        "modern_clean",
+        "new_items_2023"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 723,
+      "wall_ms": 731,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "BERKSHIRE HATHAWAY INC \u2014 2026-03-02 (10-K)",
+      "category": [
+        "incorporation_heavy"
+      ],
+      "items_found": 22,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 22,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 1448,
+      "wall_ms": 1454,
+      "fetch_ms": 2,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 1,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 14: detected 'Part III' vs canonical 'Principal Accountant Fees and Services' (score=57)",
+          "item": "14",
+          "detected_title": "Part III",
+          "canonical_title": "Principal Accountant Fees and Services",
+          "score": 57
+        }
+      ]
+    },
+    {
+      "label": "Walmart Inc. \u2014 2026-03-13 (10-K)",
+      "category": [
+        "incorporation_heavy"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 475,
+      "wall_ms": 481,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 2,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 1C: detected '.' vs canonical 'Cybersecurity' (score=0)",
+          "item": "1C",
+          "detected_title": ".",
+          "canonical_title": "Cybersecurity",
+          "score": 0
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 5: detected '.' vs canonical 'Market for Registrant's Common Equity, Related Stockholder Matters and Issuer Pu' (score=0)",
+          "item": "5",
+          "detected_title": ".",
+          "canonical_title": "Market for Registrant's Common Equity, Related Stockholder Matters and Issuer Purchases of Equity Securities",
+          "score": 0
+        }
+      ]
+    },
+    {
+      "label": "JPMORGAN CHASE & CO \u2014 2026-02-13 (10-K)",
+      "category": [
+        "bank"
+      ],
+      "items_found": 22,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 22,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 2456,
+      "wall_ms": 2482,
+      "fetch_ms": 4,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 2,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 8: detected 'Parts II and III' vs canonical 'Financial Statements and Supplementary Data' (score=50)",
+          "item": "8",
+          "detected_title": "Parts II and III",
+          "canonical_title": "Financial Statements and Supplementary Data",
+          "score": 50
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 11: detected 'Parts III and IV' vs canonical 'Executive Compensation' (score=40)",
+          "item": "11",
+          "detected_title": "Parts III and IV",
+          "canonical_title": "Executive Compensation",
+          "score": 40
+        }
+      ]
+    },
+    {
+      "label": "NEWMONT Corp /DE/ \u2014 2026-02-19 (10-K)",
+      "category": [
+        "mining"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 2410,
+      "wall_ms": 2427,
+      "fetch_ms": 3,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 5,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 2: detected 'Table of Contents' vs canonical 'Properties' (score=47)",
+          "item": "2",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Properties",
+          "score": 47
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 7: detected 'Table of Contents' vs canonical 'Management's Discussion and Analysis of Financial Condition and Results of Opera' (score=54)",
+          "item": "7",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Management's Discussion and Analysis of Financial Condition and Results of Operations",
+          "score": 54
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 8: detected 'Table of Contents' vs canonical 'Financial Statements and Supplementary Data' (score=47)",
+          "item": "8",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Financial Statements and Supplementary Data",
+          "score": 47
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 9B: detected 'Table of Contents' vs canonical 'Other Information' (score=43)",
+          "item": "9B",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Other Information",
+          "score": 43
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 11: detected 'Table of Contents' vs canonical 'Executive Compensation' (score=47)",
+          "item": "11",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Executive Compensation",
+          "score": 47
+        }
+      ]
+    },
+    {
+      "label": "Apollo Asset Management \u2014 2023-03-01 (10-K)",
+      "category": [
+        "incorporation_heavy"
+      ],
+      "items_found": 22,
+      "items_expected": 21,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 22,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 780,
+      "wall_ms": 787,
+      "fetch_ms": 3,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 2,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 7: detected 'Table of Contents' vs canonical 'Management's Discussion and Analysis of Financial Condition and Results of Opera' (score=54)",
+          "item": "7",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Management's Discussion and Analysis of Financial Condition and Results of Operations",
+          "score": 54
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 8: detected 'Table of Contents' vs canonical 'Financial Statements and Supplementary Data' (score=47)",
+          "item": "8",
+          "detected_title": "Table of Contents",
+          "canonical_title": "Financial Statements and Supplementary Data",
+          "score": 47
+        }
+      ]
+    },
+    {
+      "label": "Apple Computer Inc. \u2014 1996-12-19 (10-K, plain text)",
+      "category": [
+        "plain_text"
+      ],
+      "items_found": 14,
+      "items_expected": 14,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": 1.0,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 0,
+        "heading": 14,
+        "llm": 0
+      },
+      "format": "plain_text",
+      "duration_ms": 7,
+      "wall_ms": 9,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 1,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 14: detected 'Exhibits, Financial Statement Schedules, and Reports on' vs canonical 'Principal Accountant Fees and Services' (score=57)",
+          "item": "14",
+          "detected_title": "Exhibits, Financial Statement Schedules, and Reports on",
+          "canonical_title": "Principal Accountant Fees and Services",
+          "score": 57
+        }
+      ]
+    }
+  ]
+}

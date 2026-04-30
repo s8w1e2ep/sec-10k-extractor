@@ -65,11 +65,17 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 ## Phase 5 — Eval set + harness  (≈ 40 min)
 
-- [ ] `eval/fixtures/filings.jsonl` — ≥ 12 entries spanning all categories from spec §5.1
-- [ ] `eval/run_eval.py` — pure stdlib + httpx; per-fixture metrics; per-category breakdown; markdown + JSON output
-- [ ] First run against local URL; capture report at `eval/results/eval-<timestamp>.md`
-- [ ] Pass bar verification: items_recall ≥ 0.90, status_correctness ≥ 0.85, p95 latency ≤ 30s on modern_clean
-- [ ] **Commit**: `Phase 5: eval set + harness, first run report`
+- [x] `eval/fixtures/filings.jsonl` — 10 entries (modern_clean × 4: AAPL/MSFT/NVDA/TSLA; incorporation_heavy × 3: BRK/WMT/Apollo; bank: JPM; mining: NEM; plain_text: AAPL FY1996). Categories `amendment` and `small_cap` deferred (no readily-available 10-K/A in candidate companies' recent filings; small-cap sourcing needs more research).
+- [x] `eval/build_fixtures.py` — Submissions API probe utility that generates filings.jsonl from a candidate-CIK list
+- [x] `eval/run_eval.py` — pure stdlib + httpx + rapidfuzz harness; per-fixture metrics (items_recall, status_correctness, strategies, latency, cost); per-category aggregate; pass-bar enforcement; Markdown + JSON output
+- [x] Three real bugs surfaced and fixed via the eval cycle (see decisions.md):
+    - href regex `\b` failed between digit-and-underscore — replaced with explicit lookahead
+    - filers (MSFT/BRK) put title in link text and item number in href — added href-fallback path
+    - filers (Apollo/Tesla) split TOC across multiple cells / fragmented anchors — added row-level extraction (`<tr>`/`<li>` whose text matches "Item N. ...")
+- [x] Item 16 marked optional (per Form 10-K General Instructions: "may, at their option") — items_missing accounting now excludes voluntary items so BRK/JPM aren't dinged for legitimately omitting it
+- [x] First run report at `eval/results/eval-20260430-141249.md`. Headline: **agg_recall=1.000, agg_status_correctness=1.000, p95 modern_clean=1114 ms, total LLM cost $0.00**
+- [x] Pass bar **all green**: items_recall ≥ 0.90 ✓, status_correctness ≥ 0.85 ✓, p95 latency modern_clean ≤ 30 s ✓
+- [x] **Commit**: `Phase 5: eval set + harness, first run report`
 
 ## Phase 6 — README + prompts/  (≈ 25 min)
 

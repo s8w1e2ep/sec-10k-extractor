@@ -19,26 +19,86 @@ _ITEM_LINK_TEXT_RE = re.compile(
     r"^\s*item\s*(\d{1,2})\s*([a-z]?)\b\.?\s*[—–:.\-]?\s*(.*)$",
     re.IGNORECASE,
 )
+# Some filers (e.g. Microsoft, Berkshire, Apollo) put the title alone in the
+# link text ("Business", "Risk Factors") and encode the item number in the
+# href itself ("#item_1_business", "#item_1a_risk_factors", "#item5_market").
+# Lookahead requires a separator/non-word/end after the digit-letter group so
+# we don't false-match things like "#item5market" as 5M (group 2 grabbing 'm').
+_ITEM_HREF_RE = re.compile(
+    r"^#item[_\-]?(\d{1,2})([a-z]?)(?=[_\-]|\W|$)",
+    re.IGNORECASE,
+)
 
 
 def _extract_toc_entries(soup: BeautifulSoup) -> list[tuple[str, str, str]]:
-    """Return list of (item_number, inline_title, anchor_name) from TOC links."""
-    entries: list[tuple[str, str, str]] = []
+    """Return list of (item_number, inline_title, anchor_name) from TOC links.
+
+    Three strategies, applied in priority order; first hit wins per item:
+
+    1. **Row-level**: scan `<tr>`/`<li>` rows whose text matches "Item N. ...".
+       Handles filers (Apollo, Tesla) where the item number is in one cell
+       and the title link is in an adjacent cell, or where "Item 1C." is
+       fragmented across multiple anchors so individual link text reads
+       "Item 1" + "C".
+    2. **Link-text**: AAPL-style — single `<a>` whose own text is "Item N. Title".
+    3. **Href fallback**: MSFT/BRK-style — link text is just the title, item
+       number is encoded in the href (`#item_1_business`).
+    """
+    seen: dict[str, tuple[str, str]] = {}  # item_num → (title, anchor)
+
+    def _record(num: str, title: str, anchor: str) -> None:
+        if not anchor or num in seen:
+            return
+        seen[num] = (title, anchor)
+
+    def _first_hash_link(node) -> str | None:
+        for a in node.find_all("a", href=True):
+            href = a.get("href")
+            if isinstance(href, str) and href.startswith("#") and len(href) > 1:
+                return href[1:]
+        return None
+
+    # 1. Row-level
+    for row in soup.find_all(["tr", "li"]):
+        text = row.get_text(" ", strip=True)
+        if not text:
+            continue
+        m = _ITEM_LINK_TEXT_RE.match(text)
+        if not m:
+            continue
+        anchor = _first_hash_link(row)
+        if not anchor:
+            continue
+        num = m.group(1) + m.group(2).upper()
+        title = m.group(3).strip()
+        _record(num, title, anchor)
+
+    # 2. Link-text on individual <a>
     for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if not isinstance(href, str) or not href.startswith("#"):
+        href = a.get("href")
+        if not isinstance(href, str) or not href.startswith("#") or len(href) <= 1:
             continue
         text = a.get_text(" ", strip=True)
         m = _ITEM_LINK_TEXT_RE.match(text)
         if not m:
             continue
         num = m.group(1) + m.group(2).upper()
-        title_inline = m.group(3).strip()
-        anchor_name = href[1:]
-        if not anchor_name:
+        title = m.group(3).strip()
+        _record(num, title, href[1:])
+
+    # 3. Href fallback
+    for a in soup.find_all("a", href=True):
+        href = a.get("href")
+        if not isinstance(href, str) or not href.startswith("#") or len(href) <= 1:
             continue
-        entries.append((num, title_inline, anchor_name))
-    return entries
+        m_href = _ITEM_HREF_RE.match(href)
+        if not m_href:
+            continue
+        num = m_href.group(1) + m_href.group(2).upper()
+        title = a.get_text(" ", strip=True)
+        _record(num, title, href[1:])
+
+    return [(num, t, anchor) for num, (t, anchor) in seen.items()]
 
 
 def locate_by_toc_anchor(

@@ -213,4 +213,93 @@ from Phase 2. Phase 3's `title_mismatch` check fires on it with score=57
 
 ---
 
-_Phase 4 onward will append entries here as issues surface._
+## 2026-04-30 — Phase 5 build (eval surfaces real bugs)
+
+The point of an eval set is to fail honestly. First eval run hit
+`agg_recall = 0.687` — well below the 0.90 pass bar — and the per-fixture
+detail revealed THREE distinct TOC-extraction bugs that the AAPL-only
+smoke test had not surfaced.
+
+### Bug 1: href regex `\b` failed between digit and underscore
+
+`#item5_market_for_registrants` (MSFT) failed to match
+`^#item[_\-]?(\d{1,2})[_\-]?([a-z]?)\b` because `\b` requires a transition
+between word-char and non-word-char, and "5" → "_" is word→word (underscore
+is `\w`). Replaced `\b` with explicit lookahead
+`(?=[_\-]|\W|$)` after the optional letter. Side benefit: the lookahead
+also rejects spurious matches like `#item5market` where "m" would otherwise
+be mis-claimed as the letter suffix.
+
+### Bug 2: link text without "Item N." prefix (MSFT/BRK)
+
+Microsoft's, Berkshire's, and Apollo's TOCs put the section title in the
+link text and the item number in the href. Link text reads "Business" or
+"Risk Factors" — my `_ITEM_LINK_TEXT_RE` requires the text itself to start
+with "Item N", which these don't. Added a fallback: if link text doesn't
+match, try extracting from the href fragment instead.
+
+### Bug 3: TOC entry fragmented across multiple `<a>` (Apollo/Tesla)
+
+Apollo's TOC anchors are opaque GUIDs (`#ie0f168cc2fdb43788187e60a8929318c_307`)
+with no item-number information. The "Item 1." text lives in a separate
+`<td>` next to the title link. Tesla's Item 1C is split: one `<a>` reads
+"Item 1", a sibling reads "Cybersecurity" — my regex matches the first as
+plain Item 1, conflicting with the real Item 1.
+
+Fix: row-level extraction. Walk `<tr>` and `<li>` rows; if the row's full
+text matches "Item N. Title" (concatenated across cells), pair with the
+first `<a href="#...">` inside the row. Layered with strategies 2 and 3 in
+priority order; first hit wins per item number.
+
+After all three fixes: agg_recall jumped 0.687 → 1.000 across the eval set.
+
+### Item 16 marked `optional`
+
+After bugs 1-3 were fixed, BRK and JPM still showed recall=0.96 — both
+missing only Item 16. The SEC Form 10-K General Instructions explicitly say
+"Registrants may, at their option, include a summary..." — Item 16 is
+voluntary. BRK/JPM legitimately chose not to include it. Marking it
+`optional=True` in the catalog and excluding optional items from the
+items_missing denominator is the right semantic. After this:
+agg_recall = 1.000.
+
+### Phase 4 (LLM fallback) probably not needed
+
+Spec §3 trade-off: "rules-first; LLM as last resort, capped at 1 call".
+Plan §2.6 reserves LLM fallback for residual gaps > 5 KB after both rule
+strategies. After Phase 5 fixes, rules cover the eval set at 100% recall —
+**no fixture has any residual gap**. The LLM fallback would not have been
+invoked on any fixture. Phase 4 implementation deferred indefinitely;
+revisit only if a future fixture surfaces a real long-tail case rules
+cannot crack.
+
+### What the eval set still doesn't cover
+
+Two categories from spec §5.1 are missing in v1:
+- `amendment` (10-K/A): no recent 10-K/A in the candidate companies' recent
+  filings. Would need a focused EDGAR full-text search.
+- `small_cap`: I targeted CIK 1411494 thinking it was Stitch Fix; it turned
+  out to be Apollo Asset Management (which was repurposed for the
+  incorporation_heavy slot). Needs deliberate research to find a true
+  small-cap representative.
+
+Both deferred to Phase 8 backlog. Not blocking the pass bar, but the
+"intentionally stresses edge cases" rubric scoring axis is weakened until
+they're added.
+
+### Walmart / NVDA / Newmont title_mismatch on TOC entries
+
+Several fixtures emit `title_mismatch` warnings where the detected heading
+in `content_text` is "Table of Contents" rather than the section title.
+This means the located anchor offset points to a "Table of Contents" page
+header that appears at the top of each page in some filings, with the
+real "Item N. Title" heading a few lines later. The item is correctly
+located; only the validator's heading extraction sees the wrong line.
+
+This is a v1 quirk: filers who use repeating page headers in their HTML
+template trip the validator. Fix would be to skip "Table of Contents" /
+"PART X" lines when extracting the heading. Logged for Phase 8.
+
+---
+
+_Phase 6 onward will append entries here as issues surface._

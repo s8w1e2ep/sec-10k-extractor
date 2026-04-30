@@ -86,7 +86,9 @@ CANONICAL_ITEMS: list[CanonicalItem] = [
         "Exhibits, Financial Statement Schedules",
         valid_from_year=2003,
     ),
-    CanonicalItem("IV", "16", "Form 10-K Summary", valid_from_year=2016),
+    CanonicalItem(
+        "IV", "16", "Form 10-K Summary", valid_from_year=2016, optional=True
+    ),
 ]
 
 
@@ -109,19 +111,29 @@ def part_sort_key(part: str, item_number: str) -> tuple[int, int, str]:
     return (_PART_ORDER.get(part, 99), n_int, n_suffix)
 
 
-def expected_items_for_period(period_of_report: date | None) -> list[CanonicalItem]:
-    """Filter the catalog to items applicable to a given filing period."""
+def expected_items_for_period(
+    period_of_report: date | None, *, only_required: bool = False
+) -> list[CanonicalItem]:
+    """Filter the catalog to items applicable to a given filing period.
+
+    `only_required=True` excludes voluntary items (Item 16 Form 10-K Summary).
+    Used for items_missing accounting so we don't flag a filer for legitimately
+    skipping a voluntary item.
+    """
     if period_of_report is None:
-        return list(CANONICAL_ITEMS)
-    year = period_of_report.year
-    out = []
-    for item in CANONICAL_ITEMS:
-        if item.valid_from_year is not None and year < item.valid_from_year:
-            continue
-        if item.valid_to_year is not None and year > item.valid_to_year:
-            continue
-        out.append(item)
-    return out
+        items = list(CANONICAL_ITEMS)
+    else:
+        year = period_of_report.year
+        items = []
+        for item in CANONICAL_ITEMS:
+            if item.valid_from_year is not None and year < item.valid_from_year:
+                continue
+            if item.valid_to_year is not None and year > item.valid_to_year:
+                continue
+            items.append(item)
+    if only_required:
+        items = [it for it in items if not it.optional]
+    return items
 
 
 def fuzzy_match_title(found_title: str, threshold: int = 80) -> CanonicalItem | None:

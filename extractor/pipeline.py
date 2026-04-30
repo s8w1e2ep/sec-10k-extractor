@@ -85,7 +85,10 @@ async def extract_filing(
 
     period_date = _parse_date(meta.period_of_report)
     expected = expected_items_for_period(period_date)
-    expected_numbers = {c.item_number for c in expected}
+    # Use only_required=True for the items_missing counter so voluntary items
+    # (Item 16) don't get flagged as "missing" when filer legitimately omitted.
+    required = expected_items_for_period(period_date, only_required=True)
+    expected_numbers = {c.item_number for c in required}
     found_numbers = {it.item_number for it in items}
     missing_numbers = sorted(
         expected_numbers - found_numbers,
