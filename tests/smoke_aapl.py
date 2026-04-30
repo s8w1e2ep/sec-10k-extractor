@@ -103,6 +103,11 @@ async def main() -> int:
     check("at least one item is incorporated_by_reference",
           any(it["status"] == "incorporated_by_reference" for it in items))
     check("zero LLM calls (Phase 1 is rules-only)", stats["llm_calls"] == 0)
+    check(
+        "no validator warnings on clean modern filing",
+        not warnings,
+        f"got {len(warnings)} warning(s): {[w.get('code') for w in warnings]}",
+    )
 
     if failures:
         print(f"\nFAILED: {len(failures)} assertion(s)")

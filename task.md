@@ -46,11 +46,14 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 ## Phase 3 — Validator + warnings  (≈ 30 min)
 
-- [ ] `extractor/validator.py` — monotonicity, non-overlap, coverage, fuzzy title match
-- [ ] XBRL Company Facts cross-check (GET, 404-tolerant, warn on Item 8 mismatch)
-- [ ] Wire warnings into pipeline output
-- [ ] `tests/test_validator.py` — synthetic ItemSpan inputs covering each warning
-- [ ] **Commit**: `Phase 3: validator + self-verification warnings`
+- [x] `extractor/validator.py` — 6 checks: char_range_invalid (end<start), char_range_overlap, low_coverage (<50%), non_monotonic_order, suspect_brevity (Item 1 <1000 chars while extracted), title_mismatch (canonical-title fuzzy + alias check, threshold=75)
+- [x] XBRL Company Facts cross-check — GET `data.sec.gov/api/xbrl/companyfacts/CIK{...}.json`; httpx HTTPStatusError 404 → `xbrl_not_filed` warning; empty us-gaap → `xbrl_no_us_gaap`. Skipped for filings with `period_of_report` < 2009 (predates XBRL mandate); skipped when Item 8 status is non-extracted.
+- [x] Wire warnings into pipeline output (validator runs after items_missing check; both surfaced in `warnings`)
+- [x] `tests/test_validator.py` — 16 synthetic-input tests covering each warning code + alias-matching + non-extracted skip + pre-2009 XBRL skip; total now 53 unit tests passing
+- [x] Smoke verification:
+    - AAPL FY 2025 (modern): zero validator warnings (clean filing)
+    - AAPL FY 1996 (plain text): one `title_mismatch` on Item 14 (era-rename, the deferred Phase 8 limitation that v3 self-verification catches as designed)
+- [x] **Commit**: `Phase 3: validator + self-verification warnings`
 
 ## Phase 4 — LLM fallback locator  (≈ 30 min)
 

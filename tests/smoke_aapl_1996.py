@@ -77,6 +77,14 @@ async def main() -> int:
     check("zero LLM calls (rules-only)", stats["llm_calls"] == 0)
     check("strategy is heading (no TOC anchors in plain text)",
           stats["strategies"]["heading"] > 0 and stats["strategies"]["toc"] == 0)
+    # Phase 3 expectation: Item 14 era-renumber should fire as title_mismatch.
+    title_mismatches = [w for w in warnings if w.get("code") == "title_mismatch"]
+    item14_mismatch = any(w.get("item") == "14" for w in title_mismatches)
+    check(
+        "validator catches Item 14 era-rename (Phase 3 self-verification)",
+        item14_mismatch,
+        f"got {[w.get('item') for w in title_mismatches]} title mismatches",
+    )
 
     if failures:
         print(f"\nFAILED: {len(failures)} assertion(s)")

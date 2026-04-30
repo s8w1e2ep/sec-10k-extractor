@@ -161,4 +161,56 @@ Two design bets paid off cleanly on Phase 1's smoke:
 
 ---
 
-_Phase 3 onward will append entries here as issues surface._
+## 2026-04-30 — Phase 3 build
+
+### Title-match check: extract heading from `content_text`, not data model
+
+Originally considered adding `detected_title` to `ItemSpan` and `ExtractedItem`
+so the validator could compare what the filer wrote against the canonical
+title. Rejected: would require plumbing through both locators and a data
+model change for one validator. Instead, `_extract_section_heading()` in the
+validator parses the first line of `content_text` (which always starts with
+"Item N. Title"). Cheap, no schema change, same outcome.
+
+### XBRL check: skip pre-2009 filings entirely
+
+XBRL was first mandated for fiscal years ending after June 15, 2009. The
+Company Facts API for an old company (e.g. Apple CIK 320193) returns XBRL
+data from 2009 onwards regardless of the filing year being checked. So
+checking "us-gaap facts exist" against Apple's FY1996 Item 8 would falsely
+pass — the facts come from later years, not 1996.
+
+Decided to skip the XBRL check entirely for `period_of_report` years before
+2009. Cleaner than emitting a noisy "predates mandate" warning. False
+negatives (1996-era Item 8 we wrongly think is real) are acceptable in v1.
+
+### XBRL check: per-accession filtering deferred
+
+For post-2009 filings, the strict check would be: `for fact in
+us_gaap.values(): for entry in fact.units.values(): assert any(e.accn ==
+this_accession)`. That walks the full Company Facts JSON (multi-MB for big
+companies) per request. Skipped for v1 — the simpler "us-gaap is non-empty"
+check catches catastrophic cases (Item 8 extracted but company never filed
+XBRL at all) without the cost. A future refinement would filter by accession.
+
+### Brevity sanity scope: Item 1 only
+
+The plan mentioned brevity sanity "for `extracted` Item 1 (Business) under
+1000 chars". Resisted the temptation to extend this to other items (Item 7
+MD&A < 5000? Item 8 < 10000?). Each item's expected length varies wildly by
+filer (a small REIT's MD&A can be 2 KB; a multinational bank's is 200 KB).
+Hard-coding upper-bound expectations across items would generate a lot of
+noisy false positives. Item 1 is the safest case: virtually every operating
+company has at least a paragraph describing its business.
+
+### Validator fired correctly on the only pre-known issue
+
+AAPL FY1996 Item 14 (Sarbanes-Oxley era rename: pre-2003 = "Exhibits...",
+post-2003 = "Principal Accountant Fees") was the one known deferred problem
+from Phase 2. Phase 3's `title_mismatch` check fires on it with score=57
+(below threshold 75). This validates the design — the validator's job is to
+*surface* issues we're aware of, not silently hide them.
+
+---
+
+_Phase 4 onward will append entries here as issues surface._

@@ -21,6 +21,7 @@ from .normalizer import normalize_html, normalize_plain_text
 from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
 from .types import ExtractedItem, FilingMetadata, NormalizedDoc
+from .validator import validate
 
 
 async def extract_filing(
@@ -96,6 +97,9 @@ async def extract_filing(
             "message": f"{len(missing_numbers)} canonical items not located",
             "missing": missing_numbers,
         })
+
+    validator_warnings = await validate(items, len(doc.text), meta)
+    warnings.extend(validator_warnings)
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     stats = {
