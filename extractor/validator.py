@@ -61,9 +61,27 @@ def _check_char_range_overlap(items: list[ExtractedItem]) -> list[dict]:
                 ),
                 "item": it.item_number,
             })
-    # Adjacent overlap (in canonical order)
-    for prev, curr in zip(items, items[1:]):
-        if prev.char_range_end > curr.char_range_start:
+    # True range intersection — sort by start offset and check pairs.
+    # Walking canonical-adjacent (the previous behaviour) over-reports
+    # when canonical order disagrees with offset order: e.g., Kura Sushi
+    # FY 2025 has Item 10 anchored *after* Items 11-14 in the doc, so
+    # canonical-adjacent (10, 11) looks like a 1900-char overlap when in
+    # fact Item 10's content sits cleanly *between* Items 14's end and
+    # Item 15's start in offset space.
+    #
+    # Suppress identical ranges — those are a deliberate shared-TOC-anchor
+    # pattern (Kura Sushi: Items 11-14 all point to one IBR header),
+    # not an extraction bug.
+    by_offset = sorted(items, key=lambda x: x.char_range_start)
+    for i, prev in enumerate(by_offset):
+        for curr in by_offset[i + 1:]:
+            if curr.char_range_start >= prev.char_range_end:
+                break  # by_offset is sorted by start; no further overlap possible
+            if (
+                prev.char_range_start == curr.char_range_start
+                and prev.char_range_end == curr.char_range_end
+            ):
+                continue
             out.append({
                 "code": "char_range_overlap",
                 "message": (

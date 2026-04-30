@@ -235,10 +235,34 @@ def combine_strategies(
                 "delta": delta,
             })
 
-    spans = sorted(by_num.values(), key=lambda s: part_sort_key(s.part, s.item_number))
-    for i, s in enumerate(spans):
-        if i + 1 < len(spans):
-            s.end = spans[i + 1].start
-        elif doc_length is not None:
-            s.end = doc_length
+    spans = list(by_num.values())
+
+    # End-computation by next-distinct-start offset (not canonical order).
+    # Two real-world cases this handles:
+    #
+    #  1. **Shared TOC anchors** (e.g. Kura Sushi FY 2025): the filer used
+    #     one anchor `part_iii_items_11_through_14` for Items 11-14 and a
+    #     separate one for Item 10. With canonical ordering, Item 10's end
+    #     would be set to Item 11's start — but Item 11's start (288108) is
+    #     *earlier* in the doc than Item 10's (288116), producing an
+    #     inverted range.
+    #  2. **Out-of-order anchors**: occasionally a filer's anchors don't
+    #     match canonical order at all (rare, but observed).
+    #
+    # Offset-based end-setting: each span's end is the next strictly-larger
+    # distinct start across all spans, or doc_length if none. Items at the
+    # same start get identical (start, end) — the validator suppresses the
+    # resulting "overlap" because it's a deliberate filer choice.
+    distinct_starts = sorted({s.start for s in spans})
+    next_after: dict[int, int] = {}
+    for i, off in enumerate(distinct_starts):
+        next_after[off] = (
+            distinct_starts[i + 1]
+            if i + 1 < len(distinct_starts)
+            else (doc_length if doc_length is not None else off)
+        )
+    for s in spans:
+        s.end = next_after[s.start]
+
+    spans.sort(key=lambda s: part_sort_key(s.part, s.item_number))
     return spans, warnings

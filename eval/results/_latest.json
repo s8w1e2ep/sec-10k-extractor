@@ -1,11 +1,11 @@
 {
-  "timestamp": "20260430-171058",
+  "timestamp": "20260430-181316",
   "agg_recall": 1.0,
   "agg_status_correctness": 1.0,
-  "p95_modern_clean_ms": 1092,
+  "p95_modern_clean_ms": 971,
   "total_cost_usd": 0.0,
   "total_llm_calls": 0,
-  "n_fixtures": 10,
+  "n_fixtures": 16,
   "n_errors": 0,
   "pass": true,
   "results": [
@@ -27,9 +27,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 189,
-      "wall_ms": 201,
-      "fetch_ms": 1,
+      "duration_ms": 186,
+      "wall_ms": 196,
+      "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -53,9 +53,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1210,
-      "wall_ms": 1216,
-      "fetch_ms": 2,
+      "duration_ms": 1057,
+      "wall_ms": 1063,
+      "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -79,8 +79,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 427,
-      "wall_ms": 431,
+      "duration_ms": 488,
+      "wall_ms": 491,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -105,9 +105,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 280,
-      "wall_ms": 283,
-      "fetch_ms": 1,
+      "duration_ms": 262,
+      "wall_ms": 265,
+      "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -130,13 +130,45 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1141,
-      "wall_ms": 1145,
-      "fetch_ms": 3,
+      "duration_ms": 1096,
+      "wall_ms": 1099,
+      "fetch_ms": 2,
       "llm_calls": 0,
       "cost_usd": 0.0,
-      "n_warnings": 1,
+      "n_warnings": 5,
       "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 10: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Directors, Executive Officers and Corporate Governance' (score=62)",
+          "item": "10",
+          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
+          "canonical_title": "Directors, Executive Officers and Corporate Governance",
+          "score": 62
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 11: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Executive Compensation' (score=63)",
+          "item": "11",
+          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
+          "canonical_title": "Executive Compensation",
+          "score": 63
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 12: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Security Ownership of Certain Beneficial Owners and Management and Related Stock' (score=46)",
+          "item": "12",
+          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
+          "canonical_title": "Security Ownership of Certain Beneficial Owners and Management and Related Stockholder Matters",
+          "score": 46
+        },
+        {
+          "code": "title_mismatch",
+          "message": "Item 13: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Certain Relationships and Related Transactions, and Director Independence' (score=46)",
+          "item": "13",
+          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
+          "canonical_title": "Certain Relationships and Related Transactions, and Director Independence",
+          "score": 46
+        },
         {
           "code": "title_mismatch",
           "message": "Item 14: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Principal Accountant Fees and Services' (score=44)",
@@ -164,8 +196,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 463,
-      "wall_ms": 469,
+      "duration_ms": 352,
+      "wall_ms": 355,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -189,9 +221,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 2501,
-      "wall_ms": 2518,
-      "fetch_ms": 4,
+      "duration_ms": 1901,
+      "wall_ms": 1908,
+      "fetch_ms": 3,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -214,9 +246,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 2528,
-      "wall_ms": 2541,
-      "fetch_ms": 3,
+      "duration_ms": 1111,
+      "wall_ms": 1116,
+      "fetch_ms": 2,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -239,9 +271,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1224,
-      "wall_ms": 1237,
-      "fetch_ms": 2,
+      "duration_ms": 675,
+      "wall_ms": 682,
+      "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -264,9 +296,9 @@
         "llm": 0
       },
       "format": "plain_text",
-      "duration_ms": 23,
-      "wall_ms": 31,
-      "fetch_ms": 1,
+      "duration_ms": 12,
+      "wall_ms": 16,
+      "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 1,
@@ -278,6 +310,167 @@
           "detected_title": "Exhibits, Financial Statement Schedules, and Reports on",
           "canonical_title": "Principal Accountant Fees and Services",
           "score": 57
+        }
+      ]
+    },
+    {
+      "label": "Kura Sushi USA, Inc. \u2014 2025-11-06 (10-K)",
+      "category": [
+        "small_cap",
+        "restaurant"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 394,
+      "wall_ms": 397,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "Moderna, Inc. \u2014 2026-02-20 (10-K)",
+      "category": [
+        "biotech"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 290,
+      "wall_ms": 294,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "Caterpillar Inc. \u2014 2026-02-13 (10-K)",
+      "category": [
+        "industrial"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 1055,
+      "wall_ms": 1061,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "Chipotle Mexican Grill Inc. \u2014 2026-02-04 (10-K)",
+      "category": [
+        "restaurant"
+      ],
+      "items_found": 23,
+      "items_expected": 22,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 23,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_modern",
+      "duration_ms": 416,
+      "wall_ms": 420,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "Tiffany & Co. \u2014 2015-03-20 (10-K, FY 2014/2015 transition)",
+      "category": [
+        "luxury_retail"
+      ],
+      "items_found": 20,
+      "items_expected": 20,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 20,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_legacy",
+      "duration_ms": 403,
+      "wall_ms": 406,
+      "fetch_ms": 1,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 0,
+      "warnings": []
+    },
+    {
+      "label": "Walt Disney Co. \u2014 2002-12-04 (10-K, pre-SOX)",
+      "category": [
+        "entertainment",
+        "pre_sox"
+      ],
+      "items_found": 16,
+      "items_expected": 15,
+      "items_missing": [],
+      "items_recall": 1.0,
+      "status_correctness": null,
+      "status_wrong": {},
+      "strategies": {
+        "toc": 16,
+        "heading": 0,
+        "llm": 0
+      },
+      "format": "html_legacy",
+      "duration_ms": 532,
+      "wall_ms": 534,
+      "fetch_ms": 0,
+      "llm_calls": 0,
+      "cost_usd": 0.0,
+      "n_warnings": 1,
+      "warnings": [
+        {
+          "code": "title_mismatch",
+          "message": "Item 14: detected 'Controls and Procedures' vs canonical 'Principal Accountant Fees and Services' (score=55)",
+          "item": "14",
+          "detected_title": "Controls and Procedures",
+          "canonical_title": "Principal Accountant Fees and Services",
+          "score": 55
         }
       ]
     }
