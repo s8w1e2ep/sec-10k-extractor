@@ -1,0 +1,45 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl https://data.sec.gov/*)",
+      "Bash(curl https://www.sec.gov/Archives/*)",
+      "Bash(curl https://efts.sec.gov/*)",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl http://127.0.0.1:*)",
+      "Bash(pytest)",
+      "Bash(pytest *)",
+      "Bash(.venv/bin/pytest)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(python -m pytest *)",
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(pip show *)",
+      "Bash(pip list)",
+      "Bash(pip list *)",
+      "Bash(pip freeze)",
+      "Bash(pip freeze *)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/pip list)",
+      "Bash(.venv/bin/pip list *)",
+      "Bash(.venv/bin/pip freeze)",
+      "Bash(.venv/bin/pip freeze *)",
+      "Bash(git *)"
+    ],
+    "deny": [
+      "Bash(git rm *)",
+      "Bash(git branch -d *)",
+      "Bash(git branch -D *)",
+      "Bash(git branch --delete*)",
+      "Bash(git tag -d *)",
+      "Bash(git tag --delete*)",
+      "Bash(git stash drop*)",
+      "Bash(git stash clear)",
+      "Bash(git reset --hard*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git clean -f*)",
+      "Bash(git clean -d*)",
+      "Bash(git checkout -- *)",
+      "Bash(git restore *)"
+    ]
+  }
+}
