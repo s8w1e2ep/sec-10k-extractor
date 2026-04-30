@@ -20,8 +20,12 @@
       "description": "Real email for the User-Agent header. SEC mandates a contact in the User-Agent on every request to *.sec.gov; missing or invalid → 403. Use a monitored mailbox.",
       "required": true
     },
+    "CLAUDE_CODE_OAUTH_TOKEN": {
+      "description": "Optional. Long-lived OAuth credential issued by `claude /login`. Sent as the x-api-key header (the public Messages API rejects OAuth tokens via Bearer auth). Set this OR ANTHROPIC_API_KEY to enable the LLM fallbacks.",
+      "required": false
+    },
     "ANTHROPIC_API_KEY": {
-      "description": "Optional. Enables two LLM-backed fallbacks: (1) status resolver — fires when validator emits title_mismatch on extracted items, asks Claude Haiku 4.5 to confirm/correct status (catches era-renames like pre-2003 Item 14, unusual IBR phrasings); (2) locator fallback — fires when required items are missing, asks the LLM to find them in the first 50KB of the doc. Capped at 1 call/request, ≤50KB input. Without this key the pipeline runs rules-only and leaves the warnings unresolved.",
+      "description": "Optional alternative to CLAUDE_CODE_OAUTH_TOKEN. Enables two LLM-backed fallbacks: (1) status resolver — fires when validator emits title_mismatch on extracted items, asks Claude Haiku 4.5 to confirm/correct status (catches era-renames like pre-2003 Item 14, unusual IBR phrasings); (2) locator fallback — fires when required items are missing, asks the LLM to find them in the first 50KB of the doc. Capped at 1 call/request, ≤50KB input. Without either credential the pipeline runs rules-only and leaves the warnings unresolved.",
       "required": false
     }
   }

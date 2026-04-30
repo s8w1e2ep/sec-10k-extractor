@@ -38,7 +38,16 @@ class LLMUsage:
 
 
 def get_api_key() -> str | None:
-    return os.environ.get("ANTHROPIC_API_KEY")
+    """Return the credential to authenticate against api.anthropic.com.
+
+    Checks `CLAUDE_CODE_OAUTH_TOKEN` first, then `ANTHROPIC_API_KEY`. Both go
+    through the same `x-api-key` header — the public Messages API rejects
+    OAuth tokens sent via `Authorization: Bearer`, so we treat the OAuth
+    token as a regular API credential here.
+    """
+    return os.environ.get("CLAUDE_CODE_OAUTH_TOKEN") or os.environ.get(
+        "ANTHROPIC_API_KEY"
+    )
 
 
 def is_configured() -> bool:
@@ -59,7 +68,9 @@ async def call_json(
     """
     api_key = get_api_key()
     if not api_key:
-        raise LLMNotConfigured("ANTHROPIC_API_KEY not set")
+        raise LLMNotConfigured(
+            "Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set"
+        )
 
     if len(user) > MAX_INPUT_CHARS:
         user = user[:MAX_INPUT_CHARS]

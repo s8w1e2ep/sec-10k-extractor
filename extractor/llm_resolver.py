@@ -83,7 +83,8 @@ async def resolve_statuses(
         return items, [{
             "code": "llm_skipped_no_api_key",
             "message": (
-                "Status resolver would have run but ANTHROPIC_API_KEY is unset"
+                "Status resolver would have run but no LLM credential is set "
+                "(CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"
             ),
         }]
     except Exception as e:
@@ -161,7 +162,8 @@ async def fallback_locator(
         return [], [{
             "code": "llm_skipped_no_api_key",
             "message": (
-                "Locator fallback would have run but ANTHROPIC_API_KEY is unset"
+                "Locator fallback would have run but no LLM credential is set "
+                "(CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)"
             ),
         }]
     except Exception as e:
