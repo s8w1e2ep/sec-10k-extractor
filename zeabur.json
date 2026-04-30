@@ -21,7 +21,7 @@
       "required": true
     },
     "ANTHROPIC_API_KEY": {
-      "description": "Optional. Reserved for the LLM fallback locator (Phase 4, currently deferred — rules cover 100% of the eval set). Not consumed by the v1 pipeline.",
+      "description": "Optional. Enables two LLM-backed fallbacks: (1) status resolver — fires when validator emits title_mismatch on extracted items, asks Claude Haiku 4.5 to confirm/correct status (catches era-renames like pre-2003 Item 14, unusual IBR phrasings); (2) locator fallback — fires when required items are missing, asks the LLM to find them in the first 50KB of the doc. Capped at 1 call/request, ≤50KB input. Without this key the pipeline runs rules-only and leaves the warnings unresolved.",
       "required": false
     }
   }

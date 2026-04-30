@@ -12,6 +12,8 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 from .canonical_items import expected_items_for_period, part_sort_key
 from .fetcher import fetch
 from .format_detect import detect_format
+from .llm_client import LLMUsage, is_configured
+from .llm_resolver import fallback_locator, resolve_statuses
 from .locator import (
     combine_strategies,
     locate_by_heading_regex,
@@ -24,7 +26,7 @@ from .normalizer import (
 )
 from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
-from .types import ExtractedItem, FilingMetadata, NormalizedDoc
+from .types import ExtractedItem, FilingMetadata, ItemSpan, NormalizedDoc
 from .validator import validate
 
 
@@ -49,8 +51,8 @@ async def extract_filing(
 
     fmt = detect_format(raw, url=meta.primary_document_url)
 
-    warnings: list[dict] = []
-    items: list[ExtractedItem] = []
+    warnings_out: list[dict] = []
+    usage = LLMUsage()
 
     soup = None
     doc: NormalizedDoc
@@ -67,8 +69,31 @@ async def extract_filing(
     spans, locator_warnings = combine_strategies(
         toc_spans, heading_spans, doc_length=len(doc.text)
     )
-    warnings.extend(locator_warnings)
+    warnings_out.extend(locator_warnings)
 
+    period_date = _parse_date(meta.period_of_report)
+    expected = expected_items_for_period(period_date)
+    required = expected_items_for_period(period_date, only_required=True)
+    expected_required = {c.item_number for c in required}
+
+    # Layer 2 — locator fallback. Fires when required items are missing AND
+    # an API key is configured. Reuses the per-request 1-call cap; if it
+    # fires, Layer 1 will be skipped.
+    located_now = {s.item_number for s in spans}
+    missing_now = sorted(
+        expected_required - located_now,
+        key=lambda n: part_sort_key("I", n),
+    )
+    if missing_now and is_configured():
+        located_items_so_far = _spans_to_items_lite(spans, doc)
+        new_spans, l2_warnings = await fallback_locator(
+            doc, located_items_so_far, missing_now, usage=usage
+        )
+        warnings_out.extend(l2_warnings)
+        if new_spans:
+            spans = _merge_and_recompute(spans + new_spans, len(doc.text))
+
+    items: list[ExtractedItem] = []
     for span in spans:
         raw_content = doc.text[span.start:span.end]
         # Trim leading repeating-page-header artefacts ("Table of Contents",
@@ -94,26 +119,33 @@ async def extract_filing(
 
     items.sort(key=lambda it: part_sort_key(it.part, it.item_number))
 
-    period_date = _parse_date(meta.period_of_report)
-    expected = expected_items_for_period(period_date)
-    # Use only_required=True for the items_missing counter so voluntary items
-    # (Item 16) don't get flagged as "missing" when filer legitimately omitted.
-    required = expected_items_for_period(period_date, only_required=True)
-    expected_numbers = {c.item_number for c in required}
     found_numbers = {it.item_number for it in items}
     missing_numbers = sorted(
-        expected_numbers - found_numbers,
+        expected_required - found_numbers,
         key=lambda n: part_sort_key("I", n),
     )
     if missing_numbers:
-        warnings.append({
+        warnings_out.append({
             "code": "items_missing",
             "message": f"{len(missing_numbers)} canonical items not located",
             "missing": missing_numbers,
         })
 
     validator_warnings = await validate(items, len(doc.text), meta)
-    warnings.extend(validator_warnings)
+    warnings_out.extend(validator_warnings)
+
+    # Layer 1 — status resolver. Only fires when Layer 2 did not consume the
+    # call budget AND validator flagged title_mismatch on extracted items.
+    if usage.calls == 0 and is_configured():
+        title_mismatches = [
+            w for w in validator_warnings
+            if w.get("code") == "title_mismatch"
+        ]
+        if title_mismatches:
+            items, l1_warnings = await resolve_statuses(
+                items, title_mismatches, usage=usage
+            )
+            warnings_out.extend(l1_warnings)
 
     duration_ms = int((time.monotonic() - t0) * 1000)
     stats = {
@@ -135,18 +167,63 @@ async def extract_filing(
         "duration_ms": duration_ms,
         "fetch_ms": fetch_ms,
         "format": fmt,
-        "llm_calls": 0,
-        "llm_input_tokens": 0,
-        "llm_output_tokens": 0,
-        "estimated_cost_usd": 0.0,
+        "llm_calls": usage.calls,
+        "llm_input_tokens": usage.input_tokens,
+        "llm_output_tokens": usage.output_tokens,
+        "estimated_cost_usd": round(usage.cost_usd, 6),
     }
 
     return {
         "filing": _filing_dict(meta),
         "items": [_item_dict(it) for it in items],
         "stats": stats,
-        "warnings": warnings,
+        "warnings": warnings_out,
     }
+
+
+def _spans_to_items_lite(
+    spans: list[ItemSpan], doc: NormalizedDoc
+) -> list[ExtractedItem]:
+    """Lightweight ItemSpan→ExtractedItem so Layer 2 can see what's already
+    located. We only need item_number + char_range_start; the other fields
+    are filled with placeholders."""
+    out: list[ExtractedItem] = []
+    for s in spans:
+        out.append(ExtractedItem(
+            part=s.part,
+            item_number=s.item_number,
+            item_title=s.item_title,
+            content_text="",
+            char_range_start=s.start,
+            char_range_end=s.end,
+            status="extracted",
+            resolved_by=s.resolved_by,
+        ))
+    return out
+
+
+def _merge_and_recompute(
+    spans: list[ItemSpan], doc_length: int
+) -> list[ItemSpan]:
+    """Sort spans by start offset, drop duplicates, recompute end = next.start.
+
+    De-dupe by item_number — earliest start wins on collision (rules-located
+    items take precedence over LLM-proposed when both exist for the same num).
+    """
+    by_num: dict[str, ItemSpan] = {}
+    for s in sorted(spans, key=lambda x: (x.start, x.resolved_by != "llm")):
+        if s.item_number in by_num:
+            existing = by_num[s.item_number]
+            if existing.resolved_by != "llm" and s.resolved_by == "llm":
+                continue  # keep rules-located
+            if existing.resolved_by == "llm" and s.resolved_by != "llm":
+                by_num[s.item_number] = s  # prefer rules
+            continue
+        by_num[s.item_number] = s
+    ordered = sorted(by_num.values(), key=lambda x: x.start)
+    for i, s in enumerate(ordered):
+        s.end = ordered[i + 1].start if i + 1 < len(ordered) else doc_length
+    return ordered
 
 
 def _parse_date(s: str | None) -> date | None:
