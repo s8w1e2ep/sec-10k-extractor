@@ -108,5 +108,81 @@ This phase captures non-trivial work that surfaced after the original plan shipp
 
 - [x] **Trim repeating-page-header artefacts from content_text.** User pushed back on the lingering `title_mismatch` warnings: did the "Table of Contents" / "Parts X and Y" prefixes corrupt content extraction? Yes-ish — items were located correctly but content_text contained page-header noise that would have muddied grader-facing output and could miscategorize short reserved/N/A items at the length threshold. Fixed in two layers: (a) `extractor/normalizer.py` adds `is_boilerplate_line()` + `trim_leading_boilerplate()` with conservative patterns; (b) `extractor/pipeline.py` advances `char_range.start` past trimmed boilerplate so the response contract stays consistent; (c) `extractor/validator.py:_extract_section_heading` handles Walmart-style multi-line `ITEM N.\nTITLE` and rejects degenerate `(.+?)` regex backtracking matches. Local eval: warnings ~17 → 2 (remaining 2 are genuine — AAPL FY1996 Item 14 SOX rename, BRK Item 14 unusual IBR opener).
 - [x] **Phase 4 LLM resolvers built** (above). The 2 genuine title_mismatch warnings now drive a status correction instead of remaining unresolved.
-- [ ] Add `amendment` (10-K/A) and `small_cap` fixtures to eval set
+- [x] **`amendment` no longer needed** — Phase 9A added explicit form gating that rejects 10-K/A with HTTP 400. The "what if a 10-K/A comes in" case is now a contract, not a coverage gap.
+- [x] **`small_cap` covered** by Kura Sushi USA in Phase 9C (also tested the shared-anchor edge case it surfaced).
 - [ ] Item 14 / 15 SOX renumber: per-era titles in `CanonicalItem` (status is now correct via Phase 4 resolver; title is still cosmetic)
+
+## Phase 9 — Production hardening (post-Phase-8 follow-on)
+
+Triggered by user review of the deployed service, in this order: A → C → D → B, then the three additional hardening tasks (thread offload, defensive input handling, README API spec).
+
+### 9A — Reject non-10-K forms at the gate (≈ 10 min)
+
+- [x] `extractor/pipeline.py:UnsupportedFormError` + `_is_supported_form()` — accepts 10-K family (10-K, 10-KSB, 10-K405, 10-KT) but rejects any `/A` amendment and all non-10-K forms (10-Q, 8-K, 20-F, 40-F, …)
+- [x] `server/main.py` returns HTTP 400 with structured body `{error, form, supported_forms}`
+- [x] Live verified against Jones Soda 10-K/A
+- [x] 22 new tests, total 97
+- [x] **Commit**: `Reject non-10-K forms with HTTP 400 + structured detail` (`cd8c5a3`)
+
+### 9C — Industry / era diversity in eval set (≈ 30 min)
+
+User noted the original 10 fixtures skewed tech / mega-cap finance. Added 6 fixtures across small_cap / restaurant / biotech / industrial / luxury_retail / pre-SOX entertainment:
+
+- [x] Kura Sushi USA FY 2025 (CIK 1772177) — small_cap + restaurant. **Surfaced shared-TOC-anchor bug**: Items 11-14 share one anchor while Item 10 has its own, producing inverted `char_range_invalid`.
+- [x] Moderna FY 2025 (CIK 1682852) — biotech, large Item 1A
+- [x] Caterpillar FY 2025 (CIK 18230) — heavy-machinery / traditional industry
+- [x] Chipotle FY 2025 (CIK 1058090) — mid-cap restaurant
+- [x] Tiffany & Co. FY 2014/2015 (CIK 98246) — pre-2020 era luxury (Item 6 = Selected Financial Data, not [Reserved]); LVMH alternative since LVMH itself files 20-F
+- [x] Walt Disney Co. FY 2002 (CIK 1001039) — pre-SOX entertainment (no Item 1A/1B/9A/9B/15 expected)
+- [x] `extractor/locator.py:combine_strategies` — end-computation switched from canonical-adjacency to **offset-adjacency**. Items at the same start (shared anchor) get identical (start, end). Validator's overlap check also walks by offset order with identical-range suppression.
+- [x] `eval/probe_new_fixtures.py` — small CLI to find accessions for new (CIK, target_year) pairs, walking both `recent` and older `files` chunks
+- [x] **Commit**: `Phase C: 6 new fixtures (industries / older year) + offset-based end fix` (`2fd611b`)
+
+### 9D — Status overrides on every fixture + 3 status_detect rule fixes (≈ 45 min)
+
+Adding `expected_status_overrides` to the 14 fixtures that didn't have them surfaced **3 real status_detect bugs** and **5 of my override-design mistakes** — exactly the eval-as-debugger loop Phase 5 was set up for.
+
+- [x] Standard pattern applied to all post-2020 large-cap fixtures: `{1B: N/A, 4: N/A, 6: reserved, 9: N/A, 9C: N/A, 10-14: IBR}`. Era-aware deviations for Tiffany pre-2020, Disney pre-SOX, Apollo pre-Item-1C.
+- [x] Bug fix #1: `_INCORPORATED_RE` was `incorporat\w+\s+(?:here)?in?\s*by\s+reference` — the `in?` group required at least one "i", silently rejecting "incorporated by reference" without "herein". Hit BRK / NVDA / JPM / banks. Replaced with `incorporat\w+(?:\s+\w+)?\s+by\s+reference`.
+- [x] Bug fix #2: Items 10-14 now use three IBR signals — direct phrase anywhere; "Refer to Item N" cross-reference (compound IBR, JPM); very short content (< 200 chars) for shared-anchor fragments (Kura Sushi).
+- [x] Bug fix #3: `_NOT_APPLICABLE_RE` now matches "none applicable" (Moderna FY 2025 typo); cap raised 300 → 500 to absorb NVDA 9C trailing Part III preamble.
+- [x] Override corrections after reading actual filing content: Apollo Items 10-14 (genuinely extracted), BRK Item 4 (real Mine Safety content), Disney FY 2002 Items 4 + 13 (era + extracted), MSFT Item 1B ("no written comments" not "Not applicable").
+- [x] `eval/with_server.sh`, `eval/inspect_filing.py`, `eval/show_wrong_statuses.py`, `eval/test_status.py` — reusable debug utilities to replace the inline `python3 -c '...'` snippets that were cluttering iteration cycles.
+- [x] Final: 16/16 fixtures `status_correctness=1.000`, `agg_recall=1.000`, 0 LLM calls, p95 modern = 922 ms.
+- [x] **Commit**: `Phase D: status overrides on 14 fixtures + 3 status_detect rule fixes` (`fabcdba`)
+
+### 9B — Per-fixture rationale README (≈ 15 min)
+
+- [x] `eval/fixtures/README.md` — one paragraph per fixture grouped by category, naming the era / industry / TOC pattern each one stresses and the bug it surfaced. Closing "How to add a fixture" section threads `probe_new_fixtures.py` → `inspect_filing.py` → `run_eval.py` into a reproducible workflow.
+- [x] **Commit**: `Phase B: per-fixture rationale README` (`8075d0d`)
+
+### 9E — Thread-pool offload + 30 MB size cap (≈ 25 min)
+
+User asked: large filings would block the single-worker server while BeautifulSoup parses for 1-5 seconds — does that DoS other users?
+
+- [x] `extractor/pipeline.py:MAX_RAW_HTML_BYTES = 30 MB` + `OversizedFilingError` — rejected before BeautifulSoup is invoked
+- [x] `extractor/pipeline.py:_parse_and_normalize` bundled and offloaded via `await asyncio.to_thread(...)` so the event loop stays free during CPU-bound parsing
+- [x] `server/main.py` returns HTTP 413 for oversized; the 90s total timeout still applies
+- [x] `eval/stress_test.py` — fires 4 heavy fixtures concurrently + pings `/healthz` 50× in parallel; reports healthz percentiles under load
+- [x] Local result: `/healthz` p95 = 70 ms while 4 cold filings parse simultaneously (vs blocked >1 s without offload)
+- [x] 3 new tests covering size cap + concurrent responsiveness; total 100
+- [x] **Commit**: `Hard 30 MB cap + offload BeautifulSoup parse to thread pool` (`015babe`)
+
+### 9F — Defensive input handling (≈ 20 min)
+
+User asked: do we have防呆 for invalid CIK / accession?
+
+- [x] Catalogued existing defenses (Pydantic schema, `_normalize_cik` digit check, `_normalize_accession` format check, form gate, size cap, allowlist) — all already returning structured 400/413/422.
+- [x] Closed the gap where SEC 404/5xx bubbled up as bare 500: new `FilingNotFoundError` + `UpstreamError` exceptions in `extractor/pipeline.py`. Caught at three points (Submissions API fetch, accession lookup, document URL fetch).
+- [x] `server/main.py` maps to: 404 + `{error, what, where}` for filing not found; 502 + `{error, upstream, upstream_status}` for SEC 5xx / retry exhaustion.
+- [x] The `what` field in the 404 body distinguishes "CIK doesn't exist" from "accession not in this CIK's filings" so the caller knows which input to fix.
+- [x] 13 new tests covering each error-mapping path including FastAPI TestClient end-to-end; total 113
+- [x] Live verified locally: bad CIK → 404, malformed CIK → 400, empty body → 422, AAPL valid → 200
+- [x] **Commit**: `Map SEC 404/5xx to proper HTTP codes (no more bare 500s)` (`aada473`)
+
+### 9G — README API spec + structured error catalog (≈ 15 min)
+
+- [x] README's new "API reference" section: 4 endpoints, request schema, success response example, complete error matrix (HTTP code × trigger × body shape × example), hard limits table.
+- [x] Side-by-side 404 example showing `what` field disambiguating CIK-not-found vs accession-not-found.
+- [x] Old form-gating snippet removed from Quick Start (now lives in error matrix).
+- [x] **Commit**: `README: add API reference + structured error response catalog` (`ca32d31`)

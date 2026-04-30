@@ -442,4 +442,287 @@ cycle.
 
 ---
 
+## Phase 9 — Production hardening (post-Phase-8 review)
+
+User reviewed the deployed service and asked five questions in sequence:
+"can you handle non-10-K?", "can you broaden eval coverage?", "is each
+fixture's choice documented?", "can large filings DoS others?", and
+"is there defensive input handling?". Each one led to a small, focused
+hardening pass.
+
+### 9A — Form gate: 10-K family vs amendments
+
+Before this pass `pipeline.py` would happily parse anything the resolver
+returned. A 10-K/A amendment, a 10-Q, a 20-F — the locator would still
+try its TOC heuristics and produce *some* output. Misleading: the user
+asked for "10-K", got back a structured object that looked like a 10-K
+but might be missing items or have unrelated structure.
+
+`_is_supported_form` accepts the **10-K family** (10-K, 10-KSB, 10-K405,
+10-KT — all share the canonical item catalog) and rejects:
+
+- any form ending in `/A` (amendments — 10-K/A, 10-KSB/A, 10-KT/A, …)
+- any non-10-K form (10-Q, 8-K, 20-F, 40-F, DEF 14A, …)
+
+Test approach: 22 cases parameterized over `_is_supported_form` plus
+end-to-end pipeline tests that confirm `fetch` is **never** called for
+unsupported forms (rejection happens after resolve, before fetch).
+Verified live with Jones Soda's actual 10-K/A: HTTP 400 + structured
+body that names the form.
+
+### 9C — Industry / era diversity & the shared-anchor bug
+
+Original 10 fixtures: 7 mega-cap tech / finance, 1 small mining,
+1 plain-text, 1 mislabeled small-cap. User pushback was on the bias —
+"can you add traditional industry, biotech, restaurants, smaller
+companies, and an older year?" Six new fixtures: Kura Sushi USA
+(small_cap restaurant), Moderna (biotech), Caterpillar (industrial),
+Chipotle (restaurant), Tiffany & Co. FY 2014/2015 (luxury_retail
+pre-2020), Disney FY 2002 (entertainment + pre-SOX).
+
+The Tiffany ask was originally "Louis Vuitton". LVMH is French and
+files 20-F (foreign private issuer); it's out of scope per spec §7
+and would also be rejected by 9A's form gate. Suggested Tiffany as
+the closest US-listed luxury 10-K predecessor (acquired by LVMH in
+2020). Lesson: when a user asks for a specific company, double-check
+they actually file 10-K before going hunting for accessions.
+
+The interesting bug surfaced from Kura Sushi:
+
+```
+Item 9C   start=288012  end=288116  size=104     ← legitimate
+Item 10   start=288116  end=288108  size=-8      ← INVERTED
+Item 11   start=288108  end=288108  size=0
+Item 12   start=288108  end=288108  size=0
+```
+
+Inspection showed Kura Sushi's TOC has Items 11-14 all pointing to one
+shared anchor `part_iii_items_11_through_14` (offset 288108) while
+Item 10 has its own anchor at 288116. After canonical sort,
+`combine_strategies` set Item 10's `end` to Item 11's `start = 288108`,
+which is *earlier* than Item 10's `start = 288116`. Inverted span.
+
+Fix: end-computation switched from canonical adjacency to **offset
+adjacency**. For each span, end = the next strictly-larger distinct
+start across all spans. Items at the same start (deliberate shared
+anchors) get identical (start, end). Validator's overlap check
+correspondingly walks by offset order with identical-range
+suppression — otherwise it would over-report "overlap" when canonical
+order disagrees with offset order, e.g., the canonically-adjacent
+pair (Item 10, Item 11) for Kura Sushi looks like a 1900-char overlap
+because Item 10's content sits *between* Items 11-14's shared anchor
+and Item 15's start in offset space.
+
+Lesson generalized: **assume canonical order matches doc-offset order
+at your peril**. Some filers reorder, some share anchors. The locator's
+job is to report where each item lives in the doc; the end-computation
+should be derived from offsets, not from canonical order.
+
+### 9D — The eval-as-debugger loop, second pass
+
+Adding `expected_status_overrides` to the 14 fixtures that didn't have
+them was supposed to be a 30-minute documentation task. It surfaced
+**3 real status_detect bugs** and **5 of my override-design mistakes**.
+
+#### Bug #1 — the `(?:here)?in?` typo silently rejecting half the filers
+
+`_INCORPORATED_RE` was:
+
+```python
+re.compile(r"incorporat\w+\s+(?:here)?in?\s*by\s+reference", re.IGNORECASE)
+```
+
+Reading slowly: `(?:here)?` is optional, `in?` is `i` followed by
+optional `n`. So `i` is **required** between `incorporated` and
+`by reference`. This silently rejects every filer who wrote
+"incorporated by reference" without "herein" / "in" — which turns out
+to be most banks (JPM), most "Except for the information set forth
+under the caption…" filers (BRK), and any filer who uses the canonical
+SEC phrasing. The original AAPL fixture happened to use "incorporated
+herein by reference" so the bug went undetected through Phase 1-8.
+
+Replaced with `incorporat\w+(?:\s+\w+)?\s+by\s+reference` which matches
+both forms and any single-word qualifier between (herein, in, hereby,
+…). Tested explicitly on six variants.
+
+This is exactly the lesson Phase 5 was supposed to teach — don't trust
+that "the rule works" because one fixture passed. Adding more fixtures
+in 9C was what finally exposed it.
+
+#### Bug #2 — Items 10-14 need three IBR signals, not one
+
+After fixing Bug #1, ~half the failures remained. JPM had Item 10 going
+IBR via the new regex, but Items 11-14 stayed extracted. JPM's pattern:
+Item 10 carries the master IBR statement; Items 11-14 say only
+"Refer to Item 10." The IBR phrase isn't in their text.
+
+Generalized pattern: filers either (a) repeat the IBR statement in
+each of 10-14, or (b) put it in Item 10 and cross-reference, or
+(c) use a shared TOC anchor (Kura Sushi) that the rules locator gives
+each item only an 8-char fragment of. Three distinct signals for IBR
+in items 10-14:
+
+```python
+if item_number in {"10","11","12","13","14"}:
+    if _INCORPORATED_RE.search(text): return "incorporated_by_reference"
+    if _CROSS_REF_RE.search(text[:500]): return "incorporated_by_reference"
+    if len(text) < 200: return "incorporated_by_reference"
+```
+
+Justified item-aware because per Form 10-K General Instruction G(3),
+Items 10-14 are the *canonical* IBR-eligible items. The fallback
+"very short content" heuristic is what catches the Kura Sushi
+shared-anchor fragments — those won't be fixed at the locator level
+without a proper shared-anchor architecture, but the status detector
+can recover the right answer from the structural cue alone.
+
+#### Bug #3 — N/A regex didn't match "None Applicable" / cap too tight
+
+Moderna FY 2025 Item 9C wrote "None Applicable." (typo); regex didn't
+match. NVDA FY 2026 Item 9C is 427 chars (correct text "Not Applicable."
+plus a trailing Part III preamble that bleeds in); the original 300-char
+N/A cap excluded it.
+
+Fix: added `\bnone\s+applicable\b` alternation; raised cap 300 → 500.
+
+#### My override-design mistakes (5 fixtures)
+
+When I built the overrides initially I used "post-2020 large-cap with
+proxy" as a template and applied it semi-mechanically. After running
+eval and seeing fixtures fail, I had to read the actual filing content
+to figure out *who was wrong* — me or the pipeline. Five cases were me:
+
+- **Apollo FY 2022 Items 10-14**: I assumed `incorporation_heavy`
+  meant IBR. Apollo wrote 1.9-54.7 KB of substantive content per item.
+  Apollo simply doesn't use the IBR provision — extracted is correct.
+- **BRK FY 2025 Item 4**: I assumed non-mining = N/A. Berkshire has
+  subsidiaries (BNSF, etc.) with mining ops; Item 4 has 3.6 KB of
+  real Mine Safety disclosures.
+- **Disney FY 2002 Item 4**: pre-2011 era, Item 4 was "Submission of
+  Matters to a Vote", not Mine Safety. Content "No matters were
+  submitted to a vote… + executive officers list" is substantive,
+  not N/A. My era-anachronism.
+- **Disney FY 2002 Item 13**: 5 KB of substantive Jennifer Gold
+  employment disclosure, not IBR. I'd applied the modern IBR template
+  uncritically.
+- **MSFT FY 2025 Item 1B**: filer wrote "no written comments…",
+  pipeline correctly says extracted (not literal "Not applicable").
+  Both are semantically equivalent ("no unresolved staff comments"),
+  but the override should match what the *filer* did.
+
+Pattern across all five: **mechanically applied template instead of
+reading the actual filing**. Lesson: when the eval surfaces a
+disagreement between override and pipeline, neither can be trusted as
+ground truth — both have to be checked against the source. Build the
+inspection tool early.
+
+### 9B — Per-fixture rationale (`eval/fixtures/README.md`)
+
+Documentation pass. Most of the rationale lived in commit messages and
+prompts/03-eval-set-design.md but was scattered. One paragraph per
+fixture, grouped by category, naming the bug each one originally
+surfaced (where applicable). Future contributors picking new fixtures
+get a worked example of the discipline (don't reflect pipeline output
+back as overrides; verify against actual content). Included a
+"How to add a fixture" recipe at the end threading the three new
+helper utilities (probe_new_fixtures.py / inspect_filing.py /
+run_eval.py).
+
+### 9E — Thread-pool offload + 30 MB size cap
+
+User's question was sharp: "if a 15 MB 10-K takes 5 s to parse, are
+other users blocked?"
+
+Answer before the fix: yes, they were. CLAUDE.md mandates single
+uvicorn worker (because the SEC rate limiter is in-process). Single
+worker × synchronous BeautifulSoup means the event loop is locked
+for the whole parse — other requests queue.
+
+Two changes:
+
+1. **30 MB hard cap** (`MAX_RAW_HTML_BYTES`). Largest realistic 10-K
+   we've seen is ~15 MB (JPM with full Industry Guide 3 disclosures);
+   30 MB leaves headroom. Rejected at the size-check before
+   BeautifulSoup is invoked → 200+ MB resident memory and 5-second
+   parse never happen. HTTP 413 with structured `{size_bytes,
+   limit_bytes}`.
+
+2. **`asyncio.to_thread()` for parsing**. Bundled BeautifulSoup parse
+   + decompose + normalize into one sync function (`_parse_and_normalize`)
+   and offload the whole bundle. lxml releases the GIL during parsing
+   so concurrent requests can actually parallelise across cores. The
+   event loop stays free to serve cached requests / `/healthz` /
+   form-gate rejections.
+
+Stress-test verified locally: `/healthz` p95 = 70 ms while 4 cold
+filings parse concurrently. Without the offload, healthz queues behind
+the parsing and easily blows past 1 s.
+
+What I deliberately *didn't* do:
+
+- **Switch to selectolax**: 5-10× faster than BeautifulSoup but would
+  require rewriting the locator's TOC traversal. Not justified at this
+  scale — the offload was enough.
+- **Streaming parse via lxml.iterparse**: would lower memory peak
+  further but BeautifulSoup ergonomics for the locator are valuable.
+  Not necessary at 30 MB cap.
+- **Multi-worker uvicorn**: would break the in-process rate limiter.
+  CLAUDE.md flags this as a sharp edge — fix would require sharing
+  the bucket via Redis or similar. Out of scope.
+
+### 9F — Defensive input handling: SEC 404/5xx → proper HTTP codes
+
+User asked if there was 防呆 for invalid CIK / accession. Walking
+through the existing defenses (Pydantic schema, `_normalize_cik`
+digit check, `_normalize_accession` format check, form gate, size
+cap, outbound allowlist) showed they all returned structured 400/413/422
+already. **The gap was non-existent identifiers**: a CIK that's all
+digits but doesn't exist on SEC, or an accession that's well-formed
+but isn't in the company's filings. SEC returns 404 for those, the
+fetcher raised `httpx.HTTPStatusError`, and pipeline didn't catch it
+→ generic FastAPI 500.
+
+That's a bad signal: the user's input is the problem, but they see
+"server error" and assume our service is broken. Fix:
+
+- New `FilingNotFoundError(what, where)` — what was missing, where
+  we looked (`SEC Submissions API` vs `SEC document store`)
+- New `UpstreamError(status, where, message?)` — for any non-404 SEC
+  failure (5xx, retry exhaustion, network)
+- Caught at three points: Submissions API fetch (404 → user error,
+  5xx → upstream); accession lookup in the response JSON (not found
+  → user error); document URL fetch (404 → user error, 5xx →
+  upstream)
+- Server maps: `FilingNotFoundError` → 404 with `{error, what, where}`;
+  `UpstreamError` → 502 with `{error, upstream, upstream_status}`
+
+The `what` field is what makes 404 actionable — it distinguishes
+"CIK 9999999999 doesn't exist" from "Accession 0000320193-99-999999
+for CIK 0000320193 doesn't exist", so the caller knows which input
+to fix. Both are HTTP 404 because both are "user gave us something
+SEC doesn't recognize", but the body tells them which.
+
+Test breakage: two existing tests in `test_unsupported_form.py` had
+been using bare `RuntimeError` as a "fetch was reached" sentinel.
+With pipeline now catching `RuntimeError` → `UpstreamError`, the
+sentinel was getting absorbed. Fixed by using a per-test custom
+exception class. Lesson: when adding a catch-all in a hot path,
+grep the test suite for `pytest.raises(RuntimeError)` first.
+
+### 9G — README API reference
+
+Documentation pass. The error contract was implicit before, scattered
+across commit messages and exception class docstrings. The README's
+new "API reference" section consolidates: endpoints table, request
+schema, success response example with field-by-field comments, the
+full error matrix (7 HTTP codes × trigger × body shape × concrete
+example), and the hard-limits table.
+
+The 404 body's `what` field gets a side-by-side example showing
+"CIK doesn't exist" vs "accession doesn't exist for this CIK" — that's
+the contract that turns a vague 404 into actionable "fix this
+specific input".
+
+---
+
 _Phase 6 onward will append entries here as issues surface._
