@@ -118,16 +118,17 @@ async def test_extract_accepts_10ksb(monkeypatch):
             company_name="Tiny Co",
         )
 
+    class _GateAcceptedSentinel(Exception):
+        """Distinct from RuntimeError (which pipeline now catches as
+        UpstreamError) so we can prove the form gate let us through."""
+
     async def fake_fetch(url):
-        # Stop the pipeline here — we just need to confirm the gate
-        # accepted the form. Raise a sentinel that's clearly not the
-        # form-gate error.
-        raise RuntimeError("fetch reached — gate accepted 10-KSB")
+        raise _GateAcceptedSentinel("fetch reached — gate accepted 10-KSB")
 
     monkeypatch.setattr(pipeline, "resolve_by_cik_accession", fake_resolve)
     monkeypatch.setattr(pipeline, "fetch", fake_fetch)
 
-    with pytest.raises(RuntimeError, match="gate accepted 10-KSB"):
+    with pytest.raises(_GateAcceptedSentinel, match="gate accepted 10-KSB"):
         await extract_filing(cik="123456", accession_number="0000123456-08-000001")
 
 
@@ -152,11 +153,14 @@ async def test_extract_skips_form_check_for_unknown_form(monkeypatch):
             company_name="",
         )
 
+    class _GateAcceptedSentinel(Exception):
+        pass
+
     async def fake_fetch(url):
-        raise RuntimeError("fetch reached — gate accepted UNKNOWN")
+        raise _GateAcceptedSentinel("fetch reached — gate accepted UNKNOWN")
 
     monkeypatch.setattr(pipeline, "resolve_by_file_url", fake_resolve_file)
     monkeypatch.setattr(pipeline, "fetch", fake_fetch)
 
-    with pytest.raises(RuntimeError, match="gate accepted UNKNOWN"):
+    with pytest.raises(_GateAcceptedSentinel, match="gate accepted UNKNOWN"):
         await extract_filing(file_url="https://www.sec.gov/Archives/edgar/data/123/abc.htm")

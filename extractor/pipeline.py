@@ -6,6 +6,7 @@ import warnings
 from datetime import date
 from typing import Any
 
+import httpx
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -37,6 +38,35 @@ from .resolver import resolve_by_cik_accession, resolve_by_file_url
 from .status_detect import detect_status
 from .types import ExtractedItem, FilingMetadata, ItemSpan, NormalizedDoc
 from .validator import validate
+
+
+class FilingNotFoundError(Exception):
+    """SEC EDGAR returned 404 for the requested CIK / accession / file URL.
+
+    Distinguishes "user gave us a non-existent identifier" (404 → user
+    fixes input) from "our service crashed" (500 → we fix the bug).
+    Server maps to HTTP 404.
+    """
+
+    def __init__(self, what: str, where: str):
+        self.what = what
+        self.where = where
+        super().__init__(f"{what} not found at {where}")
+
+
+class UpstreamError(Exception):
+    """SEC EDGAR or related API returned a non-404 error (5xx, network
+    problem, retry exhaustion, ...). Not the user's fault — server maps
+    to HTTP 502 so the user knows to retry rather than fix their input.
+    """
+
+    def __init__(self, status: int, where: str, message: str = ""):
+        self.status = status
+        self.where = where
+        full = f"Upstream {where} failed (status={status})"
+        if message:
+            full += f": {message}"
+        super().__init__(full)
 
 
 class OversizedFilingError(Exception):
@@ -105,7 +135,19 @@ async def extract_filing(
         raise UnsupportedFormError(meta.form)
 
     t_fetch = time.monotonic()
-    raw = await fetch(meta.primary_document_url)
+    try:
+        raw = await fetch(meta.primary_document_url)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise FilingNotFoundError(
+                meta.primary_document_url, "SEC document store"
+            ) from e
+        raise UpstreamError(
+            e.response.status_code, "SEC document store"
+        ) from e
+    except RuntimeError as e:
+        # fetcher exhausted retries on 5xx/429
+        raise UpstreamError(0, "SEC document store", str(e)) from e
     fetch_ms = int((time.monotonic() - t_fetch) * 1000)
 
     if len(raw) > MAX_RAW_HTML_BYTES:

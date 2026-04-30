@@ -8,8 +8,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, model_validator
 
 from extractor.pipeline import (
+    FilingNotFoundError,
     OversizedFilingError,
     UnsupportedFormError,
+    UpstreamError,
     extract_filing,
 )
 
@@ -59,6 +61,24 @@ def _oversized_response(e: OversizedFilingError) -> JSONResponse:
     )
 
 
+def _not_found_response(e: FilingNotFoundError) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"error": str(e), "what": e.what, "where": e.where},
+    )
+
+
+def _upstream_response(e: UpstreamError) -> JSONResponse:
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": str(e),
+            "upstream": e.where,
+            "upstream_status": e.status,
+        },
+    )
+
+
 @app.post("/extract")
 async def extract(req: ExtractRequest):
     try:
@@ -77,6 +97,10 @@ async def extract(req: ExtractRequest):
         return _unsupported_form_response(e)
     except OversizedFilingError as e:
         return _oversized_response(e)
+    except FilingNotFoundError as e:
+        return _not_found_response(e)
+    except UpstreamError as e:
+        return _upstream_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -95,6 +119,10 @@ async def extract_get(cik: str, accession: str):
         return _unsupported_form_response(e)
     except OversizedFilingError as e:
         return _oversized_response(e)
+    except FilingNotFoundError as e:
+        return _not_found_response(e)
+    except UpstreamError as e:
+        return _upstream_response(e)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

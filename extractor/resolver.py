@@ -3,6 +3,8 @@
 import json
 import re
 
+import httpx
+
 from .fetcher import fetch
 from .types import FilingMetadata
 
@@ -60,14 +62,31 @@ async def resolve_by_cik_accession(
     cik_padded = _normalize_cik(cik)
     accession_dashed = _normalize_accession(accession)
 
+    # Defer importing pipeline-level exceptions until use, to avoid a
+    # circular import (pipeline imports from resolver).
+    from .pipeline import FilingNotFoundError, UpstreamError
+
     submissions_url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
-    raw = await fetch(submissions_url)
+    try:
+        raw = await fetch(submissions_url)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise FilingNotFoundError(
+                f"CIK {cik_padded}", "SEC Submissions API"
+            ) from e
+        raise UpstreamError(
+            e.response.status_code, "SEC Submissions API"
+        ) from e
+    except RuntimeError as e:
+        raise UpstreamError(0, "SEC Submissions API", str(e)) from e
+
     data = json.loads(raw)
 
     found = await _find_in_submissions(data, accession_dashed)
     if found is None:
-        raise ValueError(
-            f"Accession {accession_dashed} not found for CIK {cik_padded}"
+        raise FilingNotFoundError(
+            f"Accession {accession_dashed} for CIK {cik_padded}",
+            "SEC Submissions API",
         )
 
     idx, arrs = found
