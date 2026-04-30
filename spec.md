@@ -114,8 +114,7 @@ Validation:
       "item_title": "Business",
       "content_text": "...",
       "char_range": { "start": 1234, "end": 56789 },
-      "status": "extracted",
-      "resolved_by": "toc"
+      "status": "extracted"
     }
   ],
   "stats": {

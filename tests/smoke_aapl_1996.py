@@ -42,12 +42,12 @@ async def main() -> int:
     print(f"  format={stats['format']}  duration={stats['duration_ms']}ms  fetch={stats['fetch_ms']}ms")
     print()
 
-    print(f"{'#':<5}{'Part':<6}{'Title':<55}{'Status':<26}{'by':<10}{'len':>8}")
-    print("-" * 110)
+    print(f"{'#':<5}{'Part':<6}{'Title':<55}{'Status':<26}{'len':>8}")
+    print("-" * 100)
     for it in items:
         clen = it["char_range"]["end"] - it["char_range"]["start"]
         title = it["item_title"][:50]
-        print(f"{it['item_number']:<5}{it['part']:<6}{title:<55}{it['status']:<26}{it['resolved_by']:<10}{clen:>8}")
+        print(f"{it['item_number']:<5}{it['part']:<6}{title:<55}{it['status']:<26}{clen:>8}")
 
     if warnings:
         print()

@@ -435,5 +435,4 @@ def _item_dict(it: ExtractedItem) -> dict:
         "content_text": it.content_text,
         "char_range": {"start": it.char_range_start, "end": it.char_range_end},
         "status": it.status,
-        "resolved_by": it.resolved_by,
     }

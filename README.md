@@ -107,8 +107,7 @@ Full I/O contract: [`spec.md` §4.3](./spec.md). Shortened example:
       "item_title": "Business",
       "content_text": "Apple Inc. designs, manufactures...",
       "char_range": { "start": 12, "end": 56789 },   // offsets into the normalized text
-      "status": "extracted",                          // extracted | incorporated_by_reference | not_applicable | reserved
-      "resolved_by": "toc"                            // toc | heading | llm
+      "status": "extracted"                           // extracted | incorporated_by_reference | not_applicable | reserved
     }
     // … 22 more items …
   ],
@@ -179,7 +178,7 @@ The 404 body's `what` field tells you exactly which input is wrong:
 
 10-Ks have a **fixed item catalog** (23 sections: Items 1–16 across Parts I–IV, with sub-items 1A/1B/1C/7A/9A/9B/9C) but the **rendering varies enormously**: modern inline-XBRL HTML with hyperlinked tables of contents, mid-2000s loose HTML, pre-2002 plain-text `.txt` filings, 10-K/A amendments. The grader calls `/extract` with their own selected filings; we return structured JSON.
 
-**Per-item record**: `part`, `item_number`, `item_title`, `content_text`, `char_range`, `status`, `resolved_by`.
+**Per-item record**: `part`, `item_number`, `item_title`, `content_text`, `char_range`, `status`.
 
 **Status** is a *textual property* the filer wrote inside an otherwise-present item — `extracted` / `incorporated_by_reference` / `not_applicable` / `reserved` — not a structural one. Status detection runs after locating, on the located content. An incorporated-by-reference Item 10 is still a *located* Item 10.
 

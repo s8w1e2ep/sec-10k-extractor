@@ -332,12 +332,6 @@ _INDEX_HTML = r"""<!DOCTYPE html>
   .brand-text { display: flex; flex-direction: column; line-height: 1.3; }
   .brand-text strong { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
   .brand-text span { color: var(--text-dim); font-size: 12px; }
-  .header-links { display: flex; gap: 18px; }
-  .header-links a {
-    color: var(--text-muted); font-size: 13px; text-decoration: none;
-    transition: color 200ms;
-  }
-  .header-links a:hover { color: var(--text); }
   /* Hero */
   .hero { margin-bottom: 28px; }
   .hero h1 {
@@ -571,11 +565,6 @@ _INDEX_HTML = r"""<!DOCTYPE html>
           <span>Filing &rarr; structured items API</span>
         </div>
       </div>
-      <nav class="header-links">
-        <a href="/healthz" target="_blank" rel="noopener">Health</a>
-        <a href="/docs" target="_blank" rel="noopener">API docs</a>
-        <a href="/redoc" target="_blank" rel="noopener">ReDoc</a>
-      </nav>
     </header>
 
     <section class="hero">
@@ -764,7 +753,7 @@ _INDEX_HTML = r"""<!DOCTYPE html>
           + '    <span class="chev">&#9656;</span>'
           + '    <span class="item-num">' + escHtml(it.item_number || '?') + '</span>'
           + '    <span class="item-title">' + escHtml(it.item_title || '—') + '</span>'
-          + '    <span class="item-meta">' + escHtml(it.resolved_by || '—') + ' ' + escHtml(range) + '</span>'
+          + '    <span class="item-meta">' + escHtml(range) + '</span>'
           + '    ' + statusBadge(it.status)
           + '  </div>'
           + '  <div class="item-body">' + escHtml(preview) + (truncated ? '\n\n[… truncated]' : '') + '</div>'
