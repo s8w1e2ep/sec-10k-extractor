@@ -1,8 +1,8 @@
 {
-  "timestamp": "20260430-181316",
+  "timestamp": "20260430-185327",
   "agg_recall": 1.0,
   "agg_status_correctness": 1.0,
-  "p95_modern_clean_ms": 971,
+  "p95_modern_clean_ms": 922,
   "total_cost_usd": 0.0,
   "total_llm_calls": 0,
   "n_fixtures": 16,
@@ -27,8 +27,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 186,
-      "wall_ms": 196,
+      "duration_ms": 188,
+      "wall_ms": 201,
       "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -45,7 +45,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -53,8 +53,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1057,
-      "wall_ms": 1063,
+      "duration_ms": 983,
+      "wall_ms": 988,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -71,7 +71,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -79,8 +79,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 488,
-      "wall_ms": 491,
+      "duration_ms": 581,
+      "wall_ms": 588,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -97,7 +97,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -105,9 +105,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 262,
-      "wall_ms": 265,
-      "fetch_ms": 0,
+      "duration_ms": 464,
+      "wall_ms": 470,
+      "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -122,7 +122,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 22,
@@ -130,54 +130,13 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1096,
-      "wall_ms": 1099,
-      "fetch_ms": 2,
+      "duration_ms": 1940,
+      "wall_ms": 1947,
+      "fetch_ms": 3,
       "llm_calls": 0,
       "cost_usd": 0.0,
-      "n_warnings": 5,
-      "warnings": [
-        {
-          "code": "title_mismatch",
-          "message": "Item 10: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Directors, Executive Officers and Corporate Governance' (score=62)",
-          "item": "10",
-          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
-          "canonical_title": "Directors, Executive Officers and Corporate Governance",
-          "score": 62
-        },
-        {
-          "code": "title_mismatch",
-          "message": "Item 11: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Executive Compensation' (score=63)",
-          "item": "11",
-          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
-          "canonical_title": "Executive Compensation",
-          "score": 63
-        },
-        {
-          "code": "title_mismatch",
-          "message": "Item 12: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Security Ownership of Certain Beneficial Owners and Management and Related Stock' (score=46)",
-          "item": "12",
-          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
-          "canonical_title": "Security Ownership of Certain Beneficial Owners and Management and Related Stockholder Matters",
-          "score": 46
-        },
-        {
-          "code": "title_mismatch",
-          "message": "Item 13: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Certain Relationships and Related Transactions, and Director Independence' (score=46)",
-          "item": "13",
-          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
-          "canonical_title": "Certain Relationships and Related Transactions, and Director Independence",
-          "score": 46
-        },
-        {
-          "code": "title_mismatch",
-          "message": "Item 14: detected 'Except for the information set forth under the caption \u201cExecutive Officers of th' vs canonical 'Principal Accountant Fees and Services' (score=44)",
-          "item": "14",
-          "detected_title": "Except for the information set forth under the caption \u201cExecutive Officers of the Registrant\u201d in Part I hereof, information required by this Part (Items 10, 11, 12, 13 and 14) is incorporated by refer",
-          "canonical_title": "Principal Accountant Fees and Services",
-          "score": 44
-        }
-      ]
+      "n_warnings": 0,
+      "warnings": []
     },
     {
       "label": "Walmart Inc. \u2014 2026-03-13 (10-K)",
@@ -188,7 +147,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -196,8 +155,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 352,
-      "wall_ms": 355,
+      "duration_ms": 558,
+      "wall_ms": 561,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -213,7 +172,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 22,
@@ -221,9 +180,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1901,
-      "wall_ms": 1908,
-      "fetch_ms": 3,
+      "duration_ms": 2223,
+      "wall_ms": 2231,
+      "fetch_ms": 4,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -238,7 +197,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -246,8 +205,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1111,
-      "wall_ms": 1116,
+      "duration_ms": 1415,
+      "wall_ms": 1430,
       "fetch_ms": 2,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -263,7 +222,7 @@
       "items_expected": 21,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 22,
@@ -271,8 +230,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 675,
-      "wall_ms": 682,
+      "duration_ms": 1269,
+      "wall_ms": 1276,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -296,22 +255,13 @@
         "llm": 0
       },
       "format": "plain_text",
-      "duration_ms": 12,
-      "wall_ms": 16,
+      "duration_ms": 13,
+      "wall_ms": 18,
       "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
-      "n_warnings": 1,
-      "warnings": [
-        {
-          "code": "title_mismatch",
-          "message": "Item 14: detected 'Exhibits, Financial Statement Schedules, and Reports on' vs canonical 'Principal Accountant Fees and Services' (score=57)",
-          "item": "14",
-          "detected_title": "Exhibits, Financial Statement Schedules, and Reports on",
-          "canonical_title": "Principal Accountant Fees and Services",
-          "score": 57
-        }
-      ]
+      "n_warnings": 0,
+      "warnings": []
     },
     {
       "label": "Kura Sushi USA, Inc. \u2014 2025-11-06 (10-K)",
@@ -323,7 +273,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -331,9 +281,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 394,
-      "wall_ms": 397,
-      "fetch_ms": 1,
+      "duration_ms": 599,
+      "wall_ms": 605,
+      "fetch_ms": 4,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -348,7 +298,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -356,8 +306,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 290,
-      "wall_ms": 294,
+      "duration_ms": 623,
+      "wall_ms": 632,
       "fetch_ms": 1,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -373,7 +323,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -381,9 +331,9 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 1055,
-      "wall_ms": 1061,
-      "fetch_ms": 1,
+      "duration_ms": 1504,
+      "wall_ms": 1508,
+      "fetch_ms": 2,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -398,7 +348,7 @@
       "items_expected": 22,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 23,
@@ -406,8 +356,8 @@
         "llm": 0
       },
       "format": "html_modern",
-      "duration_ms": 416,
-      "wall_ms": 420,
+      "duration_ms": 242,
+      "wall_ms": 244,
       "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
@@ -423,7 +373,7 @@
       "items_expected": 20,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 20,
@@ -431,9 +381,9 @@
         "llm": 0
       },
       "format": "html_legacy",
-      "duration_ms": 403,
-      "wall_ms": 406,
-      "fetch_ms": 1,
+      "duration_ms": 340,
+      "wall_ms": 342,
+      "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
       "n_warnings": 0,
@@ -449,7 +399,7 @@
       "items_expected": 15,
       "items_missing": [],
       "items_recall": 1.0,
-      "status_correctness": null,
+      "status_correctness": 1.0,
       "status_wrong": {},
       "strategies": {
         "toc": 16,
@@ -457,8 +407,8 @@
         "llm": 0
       },
       "format": "html_legacy",
-      "duration_ms": 532,
-      "wall_ms": 534,
+      "duration_ms": 1022,
+      "wall_ms": 1028,
       "fetch_ms": 0,
       "llm_calls": 0,
       "cost_usd": 0.0,
