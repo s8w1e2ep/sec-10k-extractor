@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.zeabur.app/template.json",
+  "build": {
+    "type": "dockerfile"
+  },
+  "ports": [
+    {
+      "id": "web",
+      "port": 8000,
+      "type": "HTTP"
+    }
+  ],
+  "healthcheck": {
+    "type": "http",
+    "path": "/healthz",
+    "port": 8000
+  },
+  "env": {
+    "SEC_CONTACT_EMAIL": {
+      "description": "Real email for the User-Agent header. SEC mandates a contact in the User-Agent on every request to *.sec.gov; missing or invalid → 403. Use a monitored mailbox.",
+      "required": true
+    },
+    "ANTHROPIC_API_KEY": {
+      "description": "Optional. Reserved for the LLM fallback locator (Phase 4, currently deferred — rules cover 100% of the eval set). Not consumed by the v1 pipeline.",
+      "required": false
+    }
+  }
+}

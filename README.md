@@ -10,6 +10,8 @@
 
 ## Quick start
 
+### Local development
+
 _Requires Python ≥ 3.11, `SEC_CONTACT_EMAIL` env var (SEC mandates a contact in the User-Agent header)._
 
 ```bash
@@ -35,6 +37,18 @@ Response shape and full I/O contract: [`spec.md` §4.3](./spec.md).
 .venv/bin/python eval/run_eval.py http://localhost:8000
 # → eval/results/eval-<timestamp>.md
 ```
+
+### Deploy (Zeabur via Dockerfile)
+
+`Dockerfile` and `zeabur.json` are checked in. The image is `python:3.12-slim` + ca-certificates + the project; lxml ships manylinux wheels so no build deps are needed. Runs as a non-root `app` user; honours `$PORT` (Zeabur injects one).
+
+Required env var on Zeabur:
+- `SEC_CONTACT_EMAIL` — real email used in the SEC User-Agent header. SEC returns 403 without one.
+
+Optional:
+- `ANTHROPIC_API_KEY` — reserved for the (currently deferred) LLM fallback locator. Not consumed by v1.
+
+Health check: `GET /healthz`. Cache directory: `/app/cache` (gitignored; volume-mountable).
 
 ---
 
