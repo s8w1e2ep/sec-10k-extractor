@@ -102,4 +102,7 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 This phase captures non-trivial work that surfaced after the original plan shipped.
 
-- [ ] (placeholder; populate as discoveries land)
+- [x] **Trim repeating-page-header artefacts from content_text.** User pushed back on the lingering `title_mismatch` warnings: did the "Table of Contents" / "Parts X and Y" prefixes corrupt content extraction? Yes-ish — items were located correctly but content_text contained page-header noise that would have muddied grader-facing output and could miscategorize short reserved/N/A items at the length threshold. Fixed in two layers: (a) `extractor/normalizer.py` adds `is_boilerplate_line()` + `trim_leading_boilerplate()` with conservative patterns; (b) `extractor/pipeline.py` advances `char_range.start` past trimmed boilerplate so the response contract stays consistent; (c) `extractor/validator.py:_extract_section_heading` handles Walmart-style multi-line `ITEM N.\nTITLE` and rejects degenerate `(.+?)` regex backtracking matches. Local eval: warnings ~17 → 2 (remaining 2 are genuine — AAPL FY1996 Item 14 SOX rename, BRK Item 14 unusual IBR opener).
+- [ ] Add `amendment` (10-K/A) and `small_cap` fixtures to eval set
+- [ ] Item 14 / 15 SOX renumber: per-era titles in `CanonicalItem`
+- [ ] LLM fallback locator (Phase 4 deferred indefinitely — revisit only if a future fixture has residual gap > 5 KB after rules)
