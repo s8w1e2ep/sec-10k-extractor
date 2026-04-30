@@ -79,11 +79,12 @@ Goal: prove the loop works for one clean modern filing before scaling to messy c
 
 ## Phase 6 — README + prompts/  (≈ 25 min)
 
-- [ ] `README.md` — architecture, strategy ladder, scoring-axis verification map, ≥ 3 honest failure modes, cost discipline, AI collaboration links, live URL
-- [ ] `prompts/01-framing.md` — initial framing decisions (status as textual, not structural; char_range against normalized text)
-- [ ] `prompts/02-strategy-ladder.md` — why rules-first, when the LLM fence triggered, what got cut
-- [ ] `prompts/03-eval-set-design.md` — category coverage rationale, expected_status_overrides, why no auto-sampling
-- [ ] **Commit**: `Phase 6: README + prompts/ writeups`
+- [x] `README.md` — full rewrite to reflect Phase 5 state: actual eval results table (1.000 / 1.000 / 1114 ms), three-strategy locator description (TOC anchor with three sub-patterns; heading regex; LLM fallback DEFERRED), 4 honest failure modes (Item 14 era-rename, TOC-page-header artefact, missing categories, pre-2009 XBRL skip), AI collaboration links, project docs index. Live URL still pending Phase 7.
+- [x] `prompts/01-framing.md` — three early prompts that reshaped the spec: (1) domain-unfamiliarity forced the central-engineering-challenge framing (SEC mandates structure, not format), (2) "沒有用到就刪除" pushback became no-decorative-fields discipline, (3) three-line scope confirmation
+- [x] `prompts/02-strategy-ladder.md` — rules-first design and the **"先做 A"** decision that ordered Phase 5 before Phase 4 and caught 3 real bugs (recall progression 0.687 → 0.861 → 0.991 → 1.000)
+- [x] `prompts/03-eval-set-design.md` — eval set construction; era-notes prompt that surfaced the latent `valid_from_year` catalog bug; expected_status_overrides discipline; CIK 1411494 mishap
+- [x] `prompts/README.md` — updated index with one-line description per file pointing at the moments that mattered
+- [x] **Commit**: `Phase 6: README + prompts/ writeups`
 
 ## Phase 7 — Zeabur deploy  (≈ 15 min)
 

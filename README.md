@@ -1,115 +1,153 @@
 # sec-10k-extractor
 
-> Submission for **Task 3** of an AI Coding Test: SEC 10-K item-level structured extraction. Hybrid rules-first / LLM-fallback pipeline that takes a filing (by `CIK + accession` or `file_url`) and emits structured JSON across the 22 canonical 10-K items.
+> Submission for **Task 3** of an AI Coding Test: SEC 10-K item-level structured extraction. Rules-first pipeline that takes a filing (by `CIK + accession_number` or `file_url`) and emits structured JSON across the canonical 10-K item set, distinguishing real content from `incorporated_by_reference` / `not_applicable` / `reserved` per item.
 
-**Status**: scaffold. See [`task.md`](./task.md) for the ordered build plan.
+**Status**: Phase 5 complete. Eval set passes all bars with zero LLM cost. Awaiting Zeabur deploy (Phase 7).
 
-**Live URL**: _(to be added at Phase 7)_
+**Live URL**: _(pending Phase 7)_
 
 ---
 
 ## Quick start
 
-_Requires Python 3.12, `SEC_CONTACT_EMAIL` env var, optionally `ANTHROPIC_API_KEY`._
+_Requires Python ≥ 3.11, `SEC_CONTACT_EMAIL` env var (SEC mandates a contact in the User-Agent header)._
 
 ```bash
-pip install -r requirements.txt
-SEC_CONTACT_EMAIL='you@example.com' uvicorn server.main:app --reload --port 8000
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+SEC_CONTACT_EMAIL='you@example.com' .venv/bin/uvicorn server.main:app --reload --port 8000
 
-# extract by CIK + accession
+# extract by CIK + accession (most reliable input form)
 curl -X POST http://localhost:8000/extract \
   -H 'content-type: application/json' \
-  -d '{"cik":"320193","accession_number":"0000320193-24-000123"}'
+  -d '{"cik":"320193","accession_number":"0000320193-25-000079"}'
 
-# extract by direct file URL
+# extract by direct file URL (works for both modern and pre-2002 .txt filings)
 curl -X POST http://localhost:8000/extract \
   -H 'content-type: application/json' \
-  -d '{"file_url":"https://www.sec.gov/Archives/edgar/data/320193/000032019324000123/aapl-20240928.htm"}'
+  -d '{"file_url":"https://www.sec.gov/Archives/edgar/data/320193/0000320193-96-000023.txt"}'
 ```
 
-Response shape: see [`spec.md` §4.3](./spec.md).
+Response shape and full I/O contract: [`spec.md` §4.3](./spec.md).
+
+```bash
+# Run the eval against a running server
+.venv/bin/python eval/run_eval.py http://localhost:8000
+# → eval/results/eval-<timestamp>.md
+```
 
 ---
 
 ## What this is
 
-10-K filings have a fixed item catalog (23 items across Parts I–IV, post-2023) but their rendering varies enormously: modern inline-XBRL HTML, legacy HTML, pre-2002 plain-text filings, 10-K/A amendments that re-state only some items. The grader calls `/extract` with their own selected filings; we return structured JSON they can verify.
+10-Ks have a **fixed item catalog** (23 sections: Items 1–16 across Parts I–IV, with sub-items 1A/1B/1C/7A/9A/9B/9C) but the **rendering varies enormously**: modern inline-XBRL HTML with hyperlinked tables of contents, mid-2000s loose HTML, pre-2002 plain-text `.txt` filings, 10-K/A amendments. The grader calls `/extract` with their own selected filings; we return structured JSON.
 
 **Per-item record**: `part`, `item_number`, `item_title`, `content_text`, `char_range`, `status`, `resolved_by`.
 
-**Status** is a textual property the filer wrote inside an otherwise-present item — `extracted` / `incorporated_by_reference` / `not_applicable` / `reserved` — not a structural one. Status detection runs after locating, on the located content.
+**Status** is a *textual property* the filer wrote inside an otherwise-present item — `extracted` / `incorporated_by_reference` / `not_applicable` / `reserved` — not a structural one. Status detection runs after locating, on the located content. An incorporated-by-reference Item 10 is still a *located* Item 10.
 
 ---
 
 ## Architecture
 
-See [`plan.md` §1](./plan.md) for the full diagram. Pipeline:
+See [`plan.md` §1](./plan.md) for the diagram. Eight-stage pipeline:
 
-1. **Resolver** — `(cik, accession) | file_url` → primary 10-K URL (via Submissions API).
-2. **Fetcher** — User-Agent + 10 req/s token bucket + on-disk cache + `*.sec.gov` allowlist.
-3. **Format detect** — `html_modern | html_legacy | plain_text`.
-4. **Normalizer** — raw → normalized text + offset map. Offsets in `char_range` are into this text.
-5. **Locator** — `toc_anchor` → `heading_regex` → `llm_fallback` (last resort, capped).
-6. **Status detect** — per-item rules-only classifier.
-7. **Validator** — monotonicity, char-range continuity, canonical title fuzzy match, XBRL Company Facts cross-check; emits `warnings`.
+```
+1. Resolver       — (cik, accession) | file_url → primary 10-K URL via Submissions API
+2. Fetcher        — User-Agent + 10 req/s token bucket + on-disk cache + *.sec.gov allowlist
+3. Format detect  — html_modern | html_legacy | plain_text
+4. Normalizer     — raw → text + offset map. char_range offsets are into this text.
+5. Locator        — toc_anchor → heading_regex → llm_fallback (Phase 4, deferred — see below)
+6. Status detect  — per-item rules-only classifier (no LLM)
+7. Validator      — char-range geometry, brevity, monotonicity, title fuzzy-match,
+                    XBRL Company Facts cross-check; emits warnings
+8. Assemble       — output dict per spec §4.3
+```
 
-**Cost discipline**: a clean modern filing should make zero LLM calls. The LLM fallback is fenced — max 1 call/request, max 50 KB input, fires only on residual gaps > 5 KB.
+**Three locator strategies, layered**:
+
+1. **`toc_anchor`** (most reliable on modern filings). Three patterns supported in v1:
+   - Link text contains "Item N. Title" (AAPL convention)
+   - Link text is just title; item number in href fragment (`#item_1_business` — MSFT/BRK convention)
+   - TOC entry split across cells; row-level `<tr>`/`<li>` text matches "Item N. ..." (Apollo/Tesla convention)
+2. **`heading_regex`** runs always, fills gaps TOC missed, votes on disagreement (TOC wins on conflict). Uses the canonical-index monotonicity filter to drop in-body cross-reference matches.
+3. **`llm_fallback`** — designed (`plan.md` §2.6) but **not implemented**. After Phase 5 the rules covered 100% of the eval set with zero residual gaps; the trigger condition (residual gap > 5 KB) was satisfied on no fixture, so building the fallback would have shipped untested. Deferred until a future fixture surfaces a real long-tail case. See [`prompts/02-strategy-ladder.md`](./prompts/02-strategy-ladder.md).
+
+**Cost discipline**: the design contract (`spec.md` §1) is that "if a 1996 plain-text filing and a 2024 inline-XBRL filing both cost the same number of LLM tokens to parse, we have built the wrong system." Phase 5 confirmed this empirically — every fixture cost $0 in LLM.
 
 ---
 
 ## Self-verification (no public ground truth)
 
-We don't have ground truth, so we lean on independent signals (full list in [`spec.md` §4.6](./spec.md)):
+We don't have ground truth on `content_text`, so the validator cross-checks against independent signals (full list in [`spec.md` §4.6](./spec.md)). Each fires as a `warnings[]` entry; none fail the request.
 
-- Cross-strategy agreement (TOC anchor vs heading regex)
-- char_range non-overlap and ≥ 60% coverage
-- Item-number monotonicity within Parts
-- Canonical title fuzzy match
-- XBRL Company Facts: if Item 8 is `extracted`, Company Facts API must return ≥ 1 fact
+| Check | Catches |
+|---|---|
+| `char_range_invalid` | end < start (combine_strategies edge case on out-of-order TOC) |
+| `char_range_overlap` | adjacent items overlap |
+| `low_coverage` | located items cover < 50% of normalized doc |
+| `non_monotonic_order` | items in non-canonical order (sanity) |
+| `suspect_brevity` | extracted Item 1 (Business) under 1000 chars |
+| `title_mismatch` | heading text in content_text vs canonical (rapidfuzz partial_ratio < 75; aliases checked) |
+| `xbrl_no_us_gaap` / `xbrl_not_filed` | Item 8 extracted but Company Facts API empty / 404 (skipped pre-2009) |
 
-Disagreements surface as `warnings[]` in the response. They don't fail the request — they signal where to look.
+Phase 5 confirmed the design works: AAPL FY 1996 Item 14 was correctly *located* but our canonical title is the post-SOX rename — the validator caught it as `title_mismatch` (score=57). The check surfaces issues we know about rather than silently hiding them.
 
 ---
 
-## Eval set
+## Eval results
 
-Hand-curated fixtures at [`eval/fixtures/filings.jsonl`](./eval/fixtures/filings.jsonl). Categories ([spec §5.1](./spec.md)):
+10 hand-curated fixtures; report at [`eval/results/eval-20260430-141249.md`](./eval/results/eval-20260430-141249.md).
 
-- `modern_clean` — AAPL, MSFT recent
-- `incorporation_heavy` — Items 10–14 incorporated by reference
-- `plain_text` — pre-2002 `.txt` filing
-- `amendment` — 10-K/A
-- `small_cap` — micro-cap stress test
-- `new_items_2023` — covers Item 1C (cybersecurity)
-- `mining` — Item 4 actually populated
-- `bank` — Industry Guide 3 disclosures
+| Pass-bar check | Threshold | Result |
+|---|---|---|
+| `items_recall` | ≥ 0.90 | **1.000** |
+| `status_correctness` | ≥ 0.85 | **1.000** (on 2 fixtures with overrides) |
+| p95 latency on `modern_clean` | ≤ 30 s | **1114 ms** |
+| Total LLM cost | — | **$0.00** |
 
-Run: `python eval/run_eval.py http://localhost:8000` → `eval/results/eval-<timestamp>.md`.
+Per-category coverage (six of eight categories from `spec.md` §5.1):
 
-Pass bar:
-- `items_recall` ≥ 0.90
-- `status_correctness` ≥ 0.85 on fixtures with expected overrides
-- p95 latency ≤ 30 s on `modern_clean`
+| Category | n | mean recall |
+|---|---|---|
+| `modern_clean` | 4 | 1.000 (AAPL, MSFT, NVDA, TSLA — all FY 2024+) |
+| `incorporation_heavy` | 3 | 1.000 (BRK, WMT, Apollo) |
+| `bank` | 1 | 1.000 (JPMorgan Chase) |
+| `mining` | 1 | 1.000 (Newmont) |
+| `new_items_2023` | 4 | 1.000 (overlap with modern_clean) |
+| `plain_text` | 1 | 1.000 (AAPL FY 1996 .txt) |
+
+The eval surfaced **three real bugs** that the AAPL-only smoke had silently passed for three phases:
+
+1. href regex `\b` failed between digit and underscore — needed lookahead
+2. MSFT/BRK style: link text is just the title, item number in href — needed href fallback
+3. Apollo/Tesla style: TOC fragmented across cells/anchors — needed row-level extraction
+
+Recall progression: **0.687 → 0.861 → 0.991 → 1.000** across four iterations. See [`prompts/02-strategy-ladder.md`](./prompts/02-strategy-ladder.md) for the full story.
 
 ---
 
 ## Honest failure modes
 
-_(populated through Phase 5–6 as we hit them)_
+1. **Item 14 / 15 era-renumbering (deferred Phase 8).** Sarbanes-Oxley (2003) split pre-2003 "Item 14. Exhibits" into Item 14 (Principal Accountant Fees, new) and Item 15 (Exhibits, renumbered). Same NUMBER 14 carries different CONTENT across eras. Our locator labels detected items using the canonical (post-2003) title, so AAPL FY 1996's Item 14 (containing 20 KB of exhibits) shows up in the response with title "Principal Accountant Fees". Number and content are correct; title is era-mismatched. The validator catches it via `title_mismatch` warning. Logged in [`decisions.md`](./decisions.md).
 
-- **Pre-2002 plain-text filings**: 80% recall is the v1 bar; varied formatting defeats simple heuristics.
-- **10-K/A amendments**: items missing by design (filer only restated some). Validator warns; doesn't fail.
-- **`incorporated_by_reference` false negatives**: filer phrasing varies; we backstop with proxy / DEF 14A pattern matching but ~5% of cases slip.
+2. **TOC-page-header artefact in some fixtures.** Newmont, NVDA, JPMorgan, Walmart all emit `title_mismatch` warnings where the detected heading is "Table of Contents" rather than the section title. The item is *located correctly* — the section anchor offset just lands on a "Table of Contents" page-header that appears at the top of each PDF page in some HTML templates, with the real "Item N." heading a few lines later. Validator's heading extractor sees the wrong line. Filtering known page-header text is a Phase 8 fix.
+
+3. **Eval set lacks two categories.** `amendment` (10-K/A) and `small_cap` from [`spec.md` §5.1](./spec.md) are uncovered. No 10-K/A appeared in any candidate company's recent filings; small-cap sourcing needs deliberate research. The pass bar is met without them, but the rubric's "intentionally stresses edge cases" axis is partially weakened. See [`prompts/03-eval-set-design.md`](./prompts/03-eval-set-design.md).
+
+4. **Pre-2009 XBRL cross-check is silently skipped.** XBRL was first mandated June 2009. For pre-2009 filings, the Item 8 ↔ Company Facts cross-check would falsely pass against later-year XBRL data (since Company Facts is CIK-level, aggregated across years). We skip the check entirely for `period_of_report.year < 2009`. False negatives accepted; flagged in [`decisions.md`](./decisions.md) Phase 3 entries.
 
 ---
 
 ## Where AI helped
 
-See [`prompts/`](./prompts/) for prompt records that shaped design decisions. Highlights _(populated through Phase 6)_:
+[`prompts/`](./prompts/) — three substantive AI-collaboration writeups; the grader was told they would read these:
 
-- `01-framing.md` — status-as-textual vs status-as-structural decision
-- `02-strategy-ladder.md` — when the LLM fence trips, what got cut
-- `03-eval-set-design.md` — category coverage rationale; why hand-curated beats auto-sampled
+- [`01-framing.md`](./prompts/01-framing.md) — three prompts that reshaped the spec (domain-unfamiliarity question, pushback on a decorative `confidence` field, three-line scope confirmation).
+- [`02-strategy-ladder.md`](./prompts/02-strategy-ladder.md) — rules-first design and the **"先做 A"** decision that caught 3 real bugs by ordering Phase 5 (eval) before Phase 4 (LLM fallback). After Phase 5 hit 100% recall, Phase 4 was indefinitely deferred.
+- [`03-eval-set-design.md`](./prompts/03-eval-set-design.md) — eval-set construction; era-notes prompt that surfaced a latent catalog bug (catalog only knew about 2 of 7 era cutoffs); CIK 1411494 mishap.
+
+Companion: [`decisions.md`](./decisions.md) — implementation journal of execution-level issues and decisions made during the build.
 
 ---
 
@@ -117,5 +155,8 @@ See [`prompts/`](./prompts/) for prompt records that shaped design decisions. Hi
 
 - [`spec.md`](./spec.md) — what we're building, scoring-axis interpretation, acceptance criteria
 - [`plan.md`](./plan.md) — architecture, components, trade-offs, risks
-- [`task.md`](./task.md) — ordered phases; grader reads it
+- [`task.md`](./task.md) — phase-ordered checklist; the grader reads it
 - [`CLAUDE.md`](./CLAUDE.md) — conventions for future Claude Code sessions
+- [`decisions.md`](./decisions.md) — implementation journal (Phase-by-phase issues and decisions)
+- [`prompts/`](./prompts/) — AI-collaboration writeups required by the test rubric
+- [`eval/fixtures/format_eras.md`](./eval/fixtures/format_eras.md) — 10-K filing format era timeline for fixture selection
